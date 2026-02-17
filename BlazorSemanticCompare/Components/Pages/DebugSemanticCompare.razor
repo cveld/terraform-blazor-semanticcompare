@@ -1,0 +1,112 @@
+@page "/debug-semantic-compare"
+@using System.Text.Json
+@using BlazorSemanticCompare.Components.Shared
+@inject NavigationManager Navigation
+
+<PageTitle>Debug Semantic Compare</PageTitle>
+
+<h3>Debug: Semantic Compare</h3>
+
+@if (errorMessage != null)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (!loaded)
+{
+    <div>Loading...</div>
+}
+else if (beforeValue != null || afterValue != null)
+{
+    <SemanticComparePanel PropertyName="application_rule_collection"
+                         BeforeValue="@beforeValue"
+                         AfterValue="@afterValue"
+                         OnClose="GoBack" />
+}
+else
+{
+    <div class="alert alert-warning">Geen resource change gevonden voor het opgegeven pad.</div>
+}
+
+@code {
+    private string? beforeValue;
+    private string? afterValue;
+    private string? errorMessage;
+    private bool loaded = false;
+
+    private const string JsonFilePath = @"C:\Users\CarlintVeld\OneDrive - CloudNation\src\PowerShell\Test scenarios terraform plan json\terraform with firewall rules semantic compare.json";
+    private readonly string[] AddressParts = new[] {
+        "module", "firewallrules", "azurerm_firewall_policy_rule_collection_group", "rulecollectiongroup-prod[\"australiaeast\"]"
+    };
+    private const string PropertyName = "application_rule_collection";
+
+    protected override void OnInitialized()
+    {
+        LoadAndCompare();
+    }
+
+    private void LoadAndCompare()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(JsonFilePath))
+            {
+                errorMessage = $"File not found: {JsonFilePath}";
+                loaded = true;
+                return;
+            }
+            using var stream = System.IO.File.OpenRead(JsonFilePath);
+            using var doc = JsonDocument.Parse(stream);
+            if (!doc.RootElement.TryGetProperty("resource_changes", out var changesArray))
+            {
+                errorMessage = "resource_changes niet gevonden in JSON.";
+                loaded = true;
+                return;
+            }
+            JsonElement? before = null, after = null;
+            foreach (var item in changesArray.EnumerateArray())
+            {
+                if (!item.TryGetProperty("address", out var addressProp)) continue;
+                var address = addressProp.GetString() ?? "";
+                var addressParts = address.Split('.');
+                if (addressParts.Length != AddressParts.Length) continue;
+                bool match = true;
+                for (int i = 0; i < AddressParts.Length; i++)
+                {
+                    if (addressParts[i] != AddressParts[i])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (!match) continue;
+                if (!item.TryGetProperty("change", out var changeObj)) continue;
+                if (changeObj.TryGetProperty("before", out var beforeVal)) before = beforeVal;
+                if (changeObj.TryGetProperty("after", out var afterVal)) after = afterVal;
+                break;
+            }
+            beforeValue = GetPropertyValue(before, PropertyName);
+            afterValue = GetPropertyValue(after, PropertyName);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        loaded = true;
+    }
+
+    private string GetPropertyValue(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Object || prop.ValueKind == JsonValueKind.Array)
+                return JsonSerializer.Serialize(prop, new JsonSerializerOptions { WriteIndented = true });
+            return prop.ToString();
+        }
+        return string.Empty;
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

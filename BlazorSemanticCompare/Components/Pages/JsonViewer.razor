@@ -1,0 +1,457 @@
+@page "/"
+@page "/json-viewer"
+@using System.Text.Json
+@using System.IO
+@using BlazorSemanticCompare.Components.Shared
+@using BlazorSemanticCompare.Models
+@using BlazorSemanticCompare.Helpers
+@implements IDisposable
+@inject IConfiguration Configuration
+
+<PageTitle>Terraform JSON Semantic Compare</PageTitle>
+
+<h1>Terraform JSON Semantic Compare</h1>
+
+<div class="mb-3">Supports Azure Firewall and Application Gateway change sets. Copy your terraform plan in json format into the clipboard and hit the button. Instructions:<br/>
+<ul><li>terraform plan -out=terraform.plan</li><li>terraform show -json terraform.plan | clip (Windows) or pbcopy (Mac)</li><li>Then click "Import json plan from clipboard" button below.</li></ul>
+
+</div>
+
+<div class="mb-3">
+    @if (Configuration["DEBUG"]?.Equals("TRUE", StringComparison.OrdinalIgnoreCase) == true)
+    {
+    <button class="btn btn-primary me-2" @onclick="() => LoadJsonFile(JsonFilePathFirewall)">Load JSON File Firewall</button>
+    <button class="btn btn-primary me-2" @onclick="() => LoadJsonFile(JsonFilePathAppGateway)">Load JSON File App Gateway</button>
+    }
+    <button class="btn btn-secondary" @onclick="LoadFromClipboard">Import json plan from clipboard</button>
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-2">@errorMessage</div>
+    }
+</div>
+
+@if (isLoading)
+{
+    <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        <span>Loading JSON file...</span>
+    </div>
+}
+else if (jsonData != null)
+{
+    <div class="row">
+        <div class="col-12">
+            <h3>JSON Content</h3>
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span title="@JsonFilePath">File: @fileName</span>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ToggleTreeVisibility">
+                            @(showTree ? "Hide Tree" : "Show Tree")
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ToggleTreatEmptyAsNull">
+                            @(treatEmptyAsNull ? "Empty = Null ✓" : "Empty ≠ Null")
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleRawView">
+                            @(showRaw ? "Hide Raw" : "Show Raw")
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (showTree)
+                    {
+                        <div class="tree-container bg-light p-3 border rounded" style="max-height: 600px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+                            <JsonTreeNode Value="@jsonData.RootElement" InitiallyExpanded="true" />
+                        </div>
+                    }                    
+                    
+                    <ResourceChangesComponent ResourceChanges="@resourceChanges" 
+                                            OnSemanticCompare="@HandleSemanticCompare" 
+                                            TreatEmptyAsNull="@treatEmptyAsNull" />
+                </div>
+            </div>
+        </div>
+    </div>
+    @if (showRaw && rawJsonContent is not null)
+    {
+        <div class="raw-json-wrapper mt-3">
+            <div class="card">
+                <div class="card-header fw-bold">Raw JSON</div>
+                <div class="card-body">
+                    <pre class="raw-json">@rawJsonContent</pre>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (showSemanticCompare)
+{
+    <SemanticComparePanel PropertyName="@semanticCompareProperty"
+                         BeforeValue="@semanticCompareBefore"
+                         AfterValue="@semanticCompareAfter"
+                         AfterUnknownValue="@semanticCompareAfterUnknown"
+                         TreatEmptyAsNull="@treatEmptyAsNull"
+                         OnClose="HideSemanticCompare" />
+}
+
+<div style="height: 120px;"></div> <!-- Extra ruimte onderaan zodat sticky compare niet over content valt -->
+
+@code {
+
+    private JsonDocument? jsonData;
+    private string? rawJsonContent;
+    private string? fileName;
+    private string? errorMessage;
+    private bool isLoading = false;
+    private bool showRaw = false;
+    private bool showTree = false; // standaard verbergen
+    private bool showSemanticCompare = false;
+    private bool treatEmptyAsNull = true; // standaard empty string en null als hetzelfde behandelen
+    private string semanticCompareProperty = string.Empty;
+    private string semanticCompareBefore = string.Empty;
+    private string semanticCompareAfter = string.Empty;
+    private string semanticCompareAfterUnknown = string.Empty;
+    private string semanticCompareResult = string.Empty;
+
+    private const string JsonFilePathFirewall = @"C:\Users\CarlintVeld\OneDrive - CloudNation\src\PowerShell\Test scenarios terraform plan json\terraform with firewall rules semantic compare.json";
+    private const string JsonFilePathAppGateway = @"C:\Users\CarlintVeld\OneDrive - CloudNation\src\PowerShell\Test scenarios terraform plan json\app gateway met veel wijzigingen.json";
+
+    string? JsonFilePath;
+    private const int MaxClipboardLength = 20_000_000; // 20MB limiet
+    //private const int MaxClipboardLength = 1_048_576; // 1MB limiet
+
+    private List<ResourceChange> resourceChanges = new();
+
+    @inject IJSRuntime JS
+
+    private async Task LoadJsonFile(string fileName)
+    {
+        JsonFilePath = fileName;
+        isLoading = true;
+        errorMessage = null;
+        rawJsonContent = null; // free previous raw text if any
+        showRaw = false; // default to raw hidden
+        showTree = false; // default to tree hidden
+        StateHasChanged();
+
+        try
+        {
+            if (!File.Exists(JsonFilePath))
+            {
+                errorMessage = $"File not found: {JsonFilePath}";
+                return;
+            }
+
+            await using var stream = File.OpenRead(JsonFilePath);
+            jsonData?.Dispose();
+            jsonData = await JsonDocument.ParseAsync(stream);
+            fileName = Path.GetFileName(JsonFilePath);
+            resourceChanges = ExtractResourceChanges(jsonData);
+        }
+        catch (JsonException ex)
+        {
+            errorMessage = $"Invalid JSON format: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading file: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleRawView()
+    {
+        showRaw = !showRaw;
+        if (showRaw && rawJsonContent is null)
+        {
+            try
+            {
+                if (File.Exists(JsonFilePath))
+                {
+                    rawJsonContent = await File.ReadAllTextAsync(JsonFilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error reading raw file: {ex.Message}";
+                showRaw = false;
+            }
+        }
+        else if (!showRaw)
+        {
+            // Release raw text memory when leaving raw mode
+            rawJsonContent = null;
+        }
+    }
+
+    private void ToggleTreeVisibility()
+    {
+        showTree = !showTree;
+    }
+
+    private void ToggleTreatEmptyAsNull()
+    {
+        treatEmptyAsNull = !treatEmptyAsNull;
+    }
+
+    private string FormatJson(JsonElement? element)
+    {
+        if (element == null || element.Value.ValueKind == JsonValueKind.Undefined || element.Value.ValueKind == JsonValueKind.Null)
+            return "";
+        try
+        {
+            return JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return element.ToString(); }
+    }
+
+    private List<ResourceChange> ExtractResourceChanges(JsonDocument? doc)
+    {
+        var result = new List<ResourceChange>();
+        if (doc == null) return result;
+        if (!doc.RootElement.TryGetProperty("resource_changes", out var changesArray))
+            return result;
+        foreach (var item in changesArray.EnumerateArray())
+        {
+            if (!item.TryGetProperty("change", out var changeObj)) continue;
+            if (!changeObj.TryGetProperty("actions", out var actionsArray)) continue;
+            if (actionsArray.GetArrayLength() == 0) continue;
+            
+            var actionsList = actionsArray.EnumerateArray().Select(a => a.GetString()).ToList();
+            var action = (actionsList.Contains("delete") && actionsList.Contains("create")) 
+                ? "replace" 
+                : actionsArray[0].GetString();
+            
+            if (!string.Equals(action, "no-op", StringComparison.OrdinalIgnoreCase))
+            {
+                var type = item.TryGetProperty("type", out var t) ? t.GetString() : "?";
+                var name = item.TryGetProperty("name", out var n) ? n.GetString() : "?";
+                string address = string.Empty;
+                if (item.TryGetProperty("address", out var addressProp))
+                {
+                    address = addressProp.GetString() ?? string.Empty;
+                }
+                JsonElement? before = null, after = null, afterUnknown = null;
+                if (changeObj.TryGetProperty("before", out var beforeVal)) before = beforeVal;
+                if (changeObj.TryGetProperty("after", out var afterVal)) after = afterVal;
+                if (changeObj.TryGetProperty("after_unknown", out var afterUnknownVal)) afterUnknown = afterUnknownVal;
+                result.Add(new ResourceChange
+                {
+                    Address = address,
+                    Type = type ?? "?",
+                    Name = name ?? "?",
+                    Action = action ?? "?",
+                    Before = before,
+                    After = after,
+                    AfterUnknown = afterUnknown
+                });
+            }
+        }
+        return result;
+    }
+
+    public void Dispose()
+    {
+        jsonData?.Dispose();
+    }
+
+    private bool IsObjectOrArray(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            return prop.ValueKind == JsonValueKind.Object || prop.ValueKind == JsonValueKind.Array;
+        }
+        return false;
+    }
+
+    private JsonElement? GetPropertyElement(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            return prop;
+        }
+        return null;
+    }
+
+    private string GetPropertyValue(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Array)
+            {
+                return JsonSerializer.Serialize(prop, new JsonSerializerOptions { WriteIndented = true });
+            }
+            if (prop.ValueKind == JsonValueKind.Object)
+                return JsonSerializer.Serialize(prop, new JsonSerializerOptions { WriteIndented = false });
+            return prop.ToString();
+        }
+        return string.Empty;
+    }
+
+    private async Task HandleSemanticCompare((ResourceChange ResourceChange, string PropertyName) args)
+    {
+        var (rc, propertyName) = args;
+        
+        // Check if this property has an after_unknown value
+        var hasAfterUnknown = HasAfterUnknownValue(rc.AfterUnknown, propertyName);
+        
+        // Special handling: if one side is null and the other is an array, show the array values, not just indexes
+        var beforeElem = GetPropertyElement(rc.Before, propertyName);
+        var afterElem = GetPropertyElement(rc.After, propertyName);
+        var afterUnknownElem = GetPropertyElement(rc.AfterUnknown, propertyName);
+        
+        bool beforeIsArray = beforeElem.HasValue && beforeElem.Value.ValueKind == JsonValueKind.Array;
+        bool afterIsArray = afterElem.HasValue && afterElem.Value.ValueKind == JsonValueKind.Array;
+        bool beforeIsNull = !beforeElem.HasValue || beforeElem.Value.ValueKind == JsonValueKind.Null;
+        bool afterIsNull = !afterElem.HasValue || afterElem.Value.ValueKind == JsonValueKind.Null;
+
+        semanticCompareProperty = propertyName;
+        
+        // Get before value
+        if (beforeIsArray && afterIsNull)
+        {
+            semanticCompareBefore = FormatJson(beforeElem);
+        }
+        else
+        {
+            semanticCompareBefore = IsObjectOrArray(rc.Before, propertyName)
+                ? FormatJson(GetPropertyElement(rc.Before, propertyName))
+                : GetPropertyValue(rc.Before, propertyName);
+        }
+
+        // Get after value
+        if ((afterIsNull || !afterElem.HasValue) && hasAfterUnknown)
+        {
+            semanticCompareAfter = "<computed>";
+        }
+        else if (afterIsArray && beforeIsNull)
+        {
+            semanticCompareAfter = FormatJson(afterElem);
+        }
+        else if (IsObjectOrArray(rc.After, propertyName))
+        {
+            semanticCompareAfter = FormatJson(afterElem);
+        }
+        else
+        {
+            if (afterUnknownElem.HasValue && afterUnknownElem.Value.ValueKind == JsonValueKind.True)
+                semanticCompareAfter = "<computed>";
+            else
+                semanticCompareAfter = GetPropertyValue(rc.After, propertyName);
+        }
+
+        // Get after unknown value for tree view
+        semanticCompareAfterUnknown = afterUnknownElem.HasValue 
+            ? FormatJson(afterUnknownElem) 
+            : string.Empty;
+
+        // Determine semantic compare result
+        if ((afterIsNull || !afterElem.HasValue) && hasAfterUnknown)
+        {
+            semanticCompareResult = "Waarde wordt berekend tijdens apply (computed).";
+        }
+        else if (semanticCompareBefore == semanticCompareAfter)
+        {
+            semanticCompareResult = "Waarden zijn semantisch gelijk.";
+        }
+        else
+        {
+            semanticCompareResult = "Waarden verschillen semantisch.";
+        }
+        
+        showSemanticCompare = true;
+        StateHasChanged();
+    }
+
+    private bool HasAfterUnknownValue(JsonElement? afterUnknown, string propertyName)
+    {
+        if (!afterUnknown.HasValue || afterUnknown.Value.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (afterUnknown.Value.TryGetProperty(propertyName, out var prop))
+        {
+            // Check if the property exists and has a meaningful value (not null or false)
+            return prop.ValueKind != JsonValueKind.Null && 
+                   !(prop.ValueKind == JsonValueKind.False);
+        }
+        return false;
+    }
+
+    private void HideSemanticCompare()
+    {
+        showSemanticCompare = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadFromClipboard()
+    {
+        isLoading = true;
+        errorMessage = null;
+        rawJsonContent = null;
+        showRaw = false;
+        showTree = false;
+        StateHasChanged();
+        try
+        {
+            const int chunkSize = 10_000;
+            var prepResult = await JS.InvokeAsync<JsonElement>("window.prepareClipboardChunking", chunkSize, MaxClipboardLength);
+            if (prepResult.TryGetProperty("error", out var errorProp))
+            {
+                errorMessage = errorProp.GetString();
+                return;
+            }
+            if (prepResult.TryGetProperty("totalLength", out var totalLengthProp) &&
+                prepResult.TryGetProperty("chunkCount", out var chunkCountProp))
+            {
+                int chunkCount = chunkCountProp.GetInt32();
+                var chunks = new List<string>(chunkCount);
+                for (int i = 0; i < chunkCount; i++)
+                {
+                    var chunkResult = await JS.InvokeAsync<JsonElement>("window.getClipboardChunk", chunkSize, i);
+                    if (chunkResult.TryGetProperty("error", out var chunkError))
+                    {
+                        errorMessage = chunkError.GetString();
+                        return;
+                    }
+                    if (chunkResult.TryGetProperty("chunk", out var chunkProp))
+                    {
+                        chunks.Add(chunkProp.GetString() ?? "");
+                    }
+                }
+                var clipboardText = string.Concat(chunks);
+                if (string.IsNullOrWhiteSpace(clipboardText))
+                {
+                    errorMessage = "Clipboard is empty or does not contain any text.";
+                }
+                else
+                {
+                    jsonData?.Dispose();
+                    jsonData = JsonDocument.Parse(clipboardText);
+                    fileName = "(from clipboard)";
+                    resourceChanges = ExtractResourceChanges(jsonData);
+                    rawJsonContent = clipboardText;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            errorMessage = $"Klembordinhoud is geen geldige JSON: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fout bij lezen van klembord: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
+
+                    <div class="mb-3">Go to <a href="https://github.com/cveld">https://github.com/cveld</a> for support</div>

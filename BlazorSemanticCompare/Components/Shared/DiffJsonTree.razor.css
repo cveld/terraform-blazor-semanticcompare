@@ -1,0 +1,6 @@
+.diff-unchanged { color: #888; }
+.diff-added { color: #228B22; font-weight: bold; }
+.diff-removed { color: #B22222; font-weight: bold; }
+.diff-modified { color: #0057b8; font-weight: bold; }
+.diff-key { font-family: monospace; margin-right: 0.2em; }
+.diff-value { font-family: monospace; }

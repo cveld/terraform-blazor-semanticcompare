@@ -1,0 +1,131 @@
+/* Scoped styles for JsonViewer.razor */
+
+/* Prevent any horizontal overflow at all levels */
+:host {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+}
+
+.row, .col-12, .card, .card-body {
+    overflow-x: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-width: 0; /* Allow flex children to shrink below content size */
+}
+
+/* Critical wrapper to constrain the pre element */
+.raw-json-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important; /* Force hide overflow at wrapper level */
+    box-sizing: border-box;
+    position: relative; /* Create containing block */
+}
+
+.raw-json {
+    display: block;
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    max-height: 600px;
+    padding: 1rem;
+    background: #f8f9fa;
+    border: 1px solid rgba(0,0,0,.125);
+    border-radius: .375rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    white-space: pre-wrap !important; /* Wrap long lines but preserve formatting */
+    overflow-x: hidden !important;    /* No horizontal scroll - force wrapping */
+    overflow-y: auto !important;      /* Only vertical scroll */
+    word-wrap: break-word !important; /* Break very long words if needed */
+    overflow-wrap: break-word !important; /* Break very long words if needed */
+    word-break: break-all;            /* Even break normal words if too long */
+    margin: 0 !important;             /* remove any default margin */
+    contain: layout;                  /* contain layout calculations */
+    hyphens: none;                    /* Don't add hyphens when breaking */
+    position: relative;               /* Stay within wrapper */
+}
+
+/* Force the card-body to constrain its children */
+.card-body {
+    contain: layout;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* Tree view container should also not cause page horizontal scroll */
+.tree-container {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    box-sizing: border-box;
+    contain: layout;
+}
+
+/* Make sure card header doesn't overflow */
+.card-header {
+    overflow-x: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Ensure buttons in header don't cause overflow */
+.card-header .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Make the filename truncate if too long */
+.card-header span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+
+/* Additional constraint on Bootstrap containers */
+.container-fluid, .container {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
+/* Copy button always top-right in table cell */
+.copy-btn {
+    position: absolute !important;
+    top: 0.25rem;
+    right: 0.25rem;
+    z-index: 2;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.95em;
+    line-height: 1;
+    opacity: 0.85;
+}
+
+/* Add padding to cell content so button never overlaps */
+td[style*="position: relative"] > div {
+    padding-right: 2.5rem !important;
+}
+
+/* Remove underline from expand/collapse buttons in resource changes and tree */
+.btn-link, .btn-link:hover, .btn-link:focus,
+button.btn.btn-link, button.btn.btn-link:focus, button.btn.btn-link:hover {
+    text-decoration: none !important;
+}
+
+/* Remove underline from expand/collapse buttons in resource changes list */
+.list-group-item button.btn-link,
+.list-group-item button.btn-link:focus,
+.list-group-item button.btn-link:hover {
+    text-decoration: none !important;
+}
+
+/* Remove underline from expand/collapse buttons in tree node (if any) */
+.tree-container button,
+.tree-container button:focus,
+.tree-container button:hover {
+    text-decoration: none !important;
+}

@@ -1,0 +1,261 @@
+@using System.Text.Json
+@using BlazorSemanticCompare.Models
+@using BlazorSemanticCompare.Components.Shared
+@using BlazorSemanticCompare.Helpers
+@inject IJSRuntime JS
+
+@if (ResourceChanges != null && ResourceChanges.Count > 0)
+{
+    <div class="mt-4">
+        <h5>Resource Changes (action ≠ "no-op")</h5>
+        <ul class="list-group">
+            @for (int i = 0; i < ResourceChanges.Count; i++)
+            {
+                var idx = i; // lokale variabele voorkomt closure-issues
+                var rc = ResourceChanges[idx];
+                <li class="list-group-item" @key="rc">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <button class="btn btn-sm p-0 me-2" @onclick="() => ToggleResourceExpanded(idx)">
+                                <span>@(expandedResourceIndexes.Contains(idx) ? "▼" : "▶")</span>
+                            </button>
+                            <span class="badge @GetActionBadgeClass(rc.Action)">@rc.Action</span>
+                            <strong>@rc.GetDisplayPath()</strong> 
+                        </div>
+                    </div>
+                    @if (expandedResourceIndexes.Contains(idx))
+                    {
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <table class="table table-sm table-bordered bg-light" style="table-layout: auto">
+                                    <thead>
+                                        <tr>
+                                            <th style="white-space: nowrap; width: 1%">Property</th>
+                                            <th>Before</th>
+                                            <th>After</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var prop in GetChangedPropertyNames(rc.Before, rc.After, rc.AfterUnknown))
+                                        {
+                                            <tr>
+                                                <td style="position: relative; vertical-align: top;">
+                                                    <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => OnSemanticCompare.InvokeAsync((rc, prop))">Semantic Compare</button>
+                                                    @prop
+                                                </td>
+                                                <td style="position: relative; vertical-align: top;">
+                                                    <button class="btn btn-sm btn-outline-secondary copy-btn" style="position: absolute; top: 0.25rem; right: 0.25rem; z-index: 2; padding: 0.15rem 0.5rem; font-size: 1.1em; line-height: 1;" @onclick="() => CopyToClipboard(IsObjectOrArray(rc.Before, prop) ? FormatJson(GetPropertyElement(rc.Before, prop)) : GetPropertyValue(rc.Before, prop))" title="Copy before value">
+                                                        📋
+                                                    </button>
+                                                    <div style="padding-right: 2.5rem;">
+                                                        @if (IsObjectOrArray(rc.Before, prop))
+                                                        {
+                                                            var beforeElem = GetPropertyElement(rc.Before, prop);
+                                                            if (beforeElem.HasValue)
+                                                            {
+                                                                <JsonTreeNode Value="@beforeElem.Value" InitiallyExpanded="false" />
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            @GetPropertyValue(rc.Before, prop)
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td style="position: relative; vertical-align: top;">
+                                                    @{
+                                                        var afterElem = GetPropertyElement(rc.After, prop);
+                                                        var afterUnknownElem = GetPropertyElement(rc.AfterUnknown, prop);
+                                                        var afterValue = IsObjectOrArray(rc.After, prop) ? FormatJson(afterElem) : GetPropertyValue(rc.After, prop);
+                                                    }
+                                                    <button class="btn btn-sm btn-outline-secondary copy-btn" style="position: absolute; top: 0.25rem; right: 0.25rem; z-index: 2; padding: 0.15rem 0.5rem; font-size: 1.1em; line-height: 1;" @onclick="() => CopyToClipboard(afterValue)" title="Copy after value">
+                                                        📋
+                                                    </button>
+                                                    <div style="padding-right: 2.5rem;">
+                                                        @if (!afterElem.HasValue || afterElem.Value.ValueKind == JsonValueKind.Null)
+                                                        {
+                                                            @if (HasAfterUnknownValue(rc.AfterUnknown, prop))
+                                                            {
+                                                                <em>&lt;computed&gt;</em>
+                                                            }
+                                                        }
+                                                        else if (IsObjectOrArray(rc.After, prop))
+                                                        {
+                                                            <JsonWithComputedView Value="@afterElem" AfterUnknown="@afterUnknownElem" />
+                                                        }
+                                                        else
+                                                        {
+                                                            @if (afterUnknownElem.HasValue && afterUnknownElem.Value.ValueKind == JsonValueKind.True)
+                                                            {
+                                                                <em>&lt;computed&gt;</em>
+                                                            }
+                                                            else
+                                                            {
+                                                                @GetPropertyValue(rc.After, prop)
+                                                            }
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+[Parameter] public List<ResourceChange>? ResourceChanges { get; set; }
+[Parameter] public EventCallback<(ResourceChange ResourceChange, string PropertyName)> OnSemanticCompare { get; set; }
+[Parameter] public bool TreatEmptyAsNull { get; set; } = true;
+
+private HashSet<int> expandedResourceIndexes = new();
+
+    private void ToggleResourceExpanded(int idx)
+    {
+        if (!expandedResourceIndexes.Add(idx))
+            expandedResourceIndexes.Remove(idx);
+    }
+
+    private async Task CopyToClipboard(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+    }
+
+    private string FormatJson(JsonElement? element)
+    {
+        if (element == null || element.Value.ValueKind == JsonValueKind.Undefined || element.Value.ValueKind == JsonValueKind.Null)
+            return "";
+        try
+        {
+            return JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return element.ToString(); }
+    }
+
+    private string GetPropertyValue(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Array)
+            {
+                return JsonSerializer.Serialize(prop, new JsonSerializerOptions { WriteIndented = true });
+            }
+            if (prop.ValueKind == JsonValueKind.Object)
+                return JsonSerializer.Serialize(prop, new JsonSerializerOptions { WriteIndented = false });
+            return prop.ToString();
+        }
+        return string.Empty;
+    }
+
+    private IEnumerable<string> GetChangedPropertyNames(JsonElement? before, JsonElement? after, JsonElement? afterUnknown)
+    {
+        var names = new HashSet<string>();
+        if (before.HasValue && before.Value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in before.Value.EnumerateObject())
+                names.Add(prop.Name);
+        }
+        if (after.HasValue && after.Value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in after.Value.EnumerateObject())
+                names.Add(prop.Name);
+        }
+        if (afterUnknown.HasValue && afterUnknown.Value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in afterUnknown.Value.EnumerateObject())
+                names.Add(prop.Name);
+        }
+        foreach (var name in names.OrderBy(n => n))
+        {
+            var beforeVal = GetPropertyValue(before, name);
+            var afterVal = GetPropertyValue(after, name);
+            // Check if after_unknown has this property with a truthy value
+            bool hasAfterUnknownValue = HasAfterUnknownValue(afterUnknown, name);
+
+            // Show if there are differences between before/after, or if after_unknown has a value
+            if (!string.Equals(beforeVal, afterVal, StringComparison.Ordinal) || hasAfterUnknownValue)
+                yield return name;
+        }
+    }
+
+    private bool IsObjectOrArray(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            return prop.ValueKind == JsonValueKind.Object || prop.ValueKind == JsonValueKind.Array;
+        }
+        return false;
+    }
+
+    private JsonElement? GetPropertyElement(JsonElement? element, string propertyName)
+    {
+        if (element.HasValue && element.Value.ValueKind == JsonValueKind.Object && element.Value.TryGetProperty(propertyName, out var prop))
+        {
+            return prop;
+        }
+        return null;
+    }
+
+    private bool HasAfterUnknownValue(JsonElement? afterUnknown, string propertyName)
+    {
+        if (!afterUnknown.HasValue || afterUnknown.Value.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (afterUnknown.Value.TryGetProperty(propertyName, out var prop))
+        {
+            return ContainsTrueValue(prop);
+        }
+        return false;
+    }
+
+    private bool ContainsTrueValue(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.True:
+                return true;
+            
+            case JsonValueKind.False:
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return false;
+            
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (ContainsTrueValue(item))
+                        return true;
+                }
+                return false;
+            
+            case JsonValueKind.Object:
+                foreach (var prop in element.EnumerateObject())
+                {
+                    if (ContainsTrueValue(prop.Value))
+                        return true;
+                }
+                return false;
+            
+            default:
+                return false;
+        }
+    }
+
+    private string GetActionBadgeClass(string action) => action.ToLowerInvariant() switch
+    {
+        "create" => "bg-success",
+        "delete" => "bg-danger",
+        "update" => "bg-warning",
+        "recreate" => "bg-primary",
+        _ => "bg-info"
+    };
+}

@@ -1,0 +1,161 @@
+@using System.Text.Json
+@using BlazorSemanticCompare.Services
+@using BlazorSemanticCompare.Helpers
+@inject JsonProcessingService JsonDiffService
+@inject IJSRuntime JS
+
+<div style="position:sticky; left:0; right:0; bottom:0; background:#fff; border-top:2px solid #007bff; z-index:9999; box-shadow:0 -2px 8px rgba(0,0,0,0.08); padding:1rem; margin-top:2rem;">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Semantic Compare: @PropertyName</strong>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="OnClose">Sluiten</button>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="border p-2 bg-light">
+                    <div class="fw-bold mb-1">Before</div>
+                    <button class="btn btn-sm btn-outline-secondary mb-2 me-2" @onclick="ToggleBeforeRaw">@(ShowBeforeRaw ? "Hide raw" : "Show raw")</button>
+                    <button class="btn btn-sm btn-outline-secondary mb-2" @onclick="CopyBeforeRaw" title="Copy before JSON">📋</button>
+                    @if (ShowBeforeRaw)
+                    {
+                        <pre style="white-space: pre-wrap;">@BeforeValue</pre>
+                    }
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="border p-2 bg-light">
+                    <div class="fw-bold mb-1">After @(hasAfterUnknown ? "(with computed values)" : "")</div>
+                    <button class="btn btn-sm btn-outline-secondary mb-2 me-2" @onclick="ToggleAfterRaw">@(ShowAfterRaw ? "Hide raw" : "Show raw")</button>
+                    @if (hasAfterUnknown)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary mb-2 me-2" @onclick="ToggleAfterTree">@(ShowAfterTree ? "Hide tree" : "Show tree")</button>
+                    }
+                    <button class="btn btn-sm btn-outline-secondary mb-2" @onclick="CopyAfterRaw" title="Copy after JSON">📋</button>
+                    @if (ShowAfterRaw)
+                    {
+                        <pre style="white-space: pre-wrap;">@AfterValue</pre>
+                    }
+                    @if (ShowAfterTree && afterElement.HasValue)
+                    {
+                        <div class="mt-2 border rounded p-2" style="background-color: #f8f9fa;">
+                            <JsonWithComputedView Value="@afterElement" AfterUnknown="@afterUnknownElement" />
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="mt-3">
+            <strong>Differences:</strong>
+            @if (DiffRoot != null)
+            {
+                <div class="bg-light p-2 border rounded mt-2" style="max-height: 400px; overflow:auto;">
+                    <DiffJsonTree Node="@DiffRoot" />
+                </div>
+            }
+            else
+            {
+                <div class="text-danger">Kon geen geldige JSON vergelijken.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+[Parameter] public string PropertyName { get; set; } = string.Empty;
+[Parameter] public string BeforeValue { get; set; } = string.Empty;
+[Parameter] public string AfterValue { get; set; } = string.Empty;
+[Parameter] public string AfterUnknownValue { get; set; } = string.Empty;
+[Parameter] public bool TreatEmptyAsNull { get; set; } = true;
+[Parameter] public EventCallback OnClose { get; set; }
+
+    private JsonDiffNode? DiffRoot;
+    private bool ShowBeforeRaw = false;
+    private bool ShowAfterRaw = false;
+    private bool ShowAfterTree = false;
+
+    private JsonElement? afterElement;
+    private JsonElement? afterUnknownElement;
+    private bool hasAfterUnknown = false;
+
+    private void ToggleBeforeRaw() => ShowBeforeRaw = !ShowBeforeRaw;
+    private void ToggleAfterRaw() => ShowAfterRaw = !ShowAfterRaw;
+    private void ToggleAfterTree() => ShowAfterTree = !ShowAfterTree;
+
+    private async Task CopyBeforeRaw()
+    {
+        if (!string.IsNullOrWhiteSpace(BeforeValue))
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BeforeValue);
+    }
+    private async Task CopyAfterRaw()
+    {
+        if (!string.IsNullOrWhiteSpace(AfterValue))
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", AfterValue);
+    }
+
+    protected override void OnParametersSet()
+    {
+        DiffRoot = null;
+        afterElement = null;
+        afterUnknownElement = null;
+        hasAfterUnknown = false;
+
+        if (!string.IsNullOrWhiteSpace(BeforeValue) || !string.IsNullOrWhiteSpace(AfterValue))
+        {
+            try
+            {
+                JsonElement? before = null;
+                JsonElement? after = null;
+                if (!string.IsNullOrWhiteSpace(BeforeValue))
+                {
+                    before = TryParseJsonElement(BeforeValue);
+                }
+                if (!string.IsNullOrWhiteSpace(AfterValue))
+                {
+                    after = TryParseJsonElement(AfterValue);
+                    afterElement = after;
+                }
+                if (!string.IsNullOrWhiteSpace(AfterUnknownValue))
+                {
+                    afterUnknownElement = TryParseJsonElement(AfterUnknownValue);
+                    hasAfterUnknown = true;
+                    // Don't auto-show tree
+                    ShowAfterTree = false;
+                }
+                
+                // Merge after with afterUnknown for the diff comparison
+                JsonElement? mergedAfter = after;
+                if (hasAfterUnknown && after.HasValue)
+                {
+                    var merged = JsonComputedMerger.MergeAfterWithComputed(after, afterUnknownElement);
+                    var json = JsonSerializer.Serialize(merged, new JsonSerializerOptions { WriteIndented = true });
+                    json = JsonComputedMerger.ReplaceComputedMarkers(json);
+                    mergedAfter = JsonDocument.Parse(json).RootElement;
+                }
+                
+                
+                DiffRoot = JsonDiffService.Compare(before, mergedAfter, PropertyName, TreatEmptyAsNull);
+            }
+            catch
+            {
+                DiffRoot = null;
+            }
+        }
+    }
+
+    private JsonElement? TryParseJsonElement(string value)
+    {
+        // Try to parse as JSON, fallback to string if not possible
+        try
+        {
+            // If it looks like a JSON array or object, try to parse
+            var trimmed = value.Trim();
+            if ((trimmed.StartsWith("[") && trimmed.EndsWith("]")) || (trimmed.StartsWith("{") && trimmed.EndsWith("}")))
+            {
+                return JsonDocument.Parse(trimmed).RootElement.Clone();
+            }
+        }
+        catch { }
+        // Fallback: treat as string value
+        return JsonDocument.Parse(JsonSerializer.Serialize(value)).RootElement.Clone();
+    }
+}

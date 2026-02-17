@@ -1,0 +1,241 @@
+@using BlazorSemanticCompare.Services
+@using System.Text.Json
+
+@if (Node == null)
+{
+    <span class="text-muted">(no data)</span>
+}
+else if (IsPrimitiveArray(Node))
+{
+    <div class="diff-node @GetDiffClass(Node.Kind)">
+        @if (!string.IsNullOrEmpty(Node.PropertyName))
+        {
+            <button class="btn btn-sm p-0 me-1" @onclick="Toggle" style="vertical-align:middle;">
+                @if (IsExpandable)
+                {
+                    <span>@(Expanded ? "▾" : "▸")</span>
+                }
+            </button>
+            <span class="diff-key">@Node.PropertyName</span>
+            @if (IsExpandable)
+            {
+                <span>:</span>                    
+            }
+        }
+        <span>&nbsp;</span><span class="@GetDiffClass(Node.Kind)">[</span>
+        @if (Node.Children != null && Node.Children.Count > 0 && Expanded)
+        {
+            <ul class="list-unstyled ms-3 mb-0">
+                @for (int i = 0; i < Node.Children.Count; i++)
+                {
+                    var child = Node.Children[i];
+                    <li class="@GetDiffClass(child.Kind)">
+                        @if (!string.IsNullOrEmpty(child.PropertyName))
+                        {
+                            <span class="diff-key">@child.PropertyName</span>
+                            if (child.Children != null || child.After != null || child.Before != null)
+                            {
+                                <span>: </span>                            
+                            }
+                        }
+                        @if (child.Kind == DiffKind.Modified && child.Before.HasValue && child.After.HasValue)
+                        {
+                            <span class="diff-value">
+                                <span class="diff-removed">@GetSingleValueText(child, true)</span>
+                                <span> → </span>
+                                <span class="diff-added">@GetSingleValueText(child, false)</span>
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="diff-value">@GetValueText(child)</span>
+                        }
+                        @(i < Node.Children.Count - 1 ? "," : null)
+                    </li>
+                }
+            </ul>
+        }
+        else if (Node.Children != null && Node.Children.Count > 0 && !Expanded)
+        {
+            <span class="@GetDiffClass(Node.Kind)">…@Node.Children.Count items…</span>
+        }
+        <span class="@GetDiffClass(Node.Kind)">]</span>
+    </div>
+}
+else
+{
+    <div class="diff-node @GetDiffClass(Node.Kind)">
+        @if (!string.IsNullOrEmpty(Node.PropertyName))
+        {
+            <button class="btn btn-sm p-0 me-1" @onclick="Toggle" style="vertical-align:middle;">
+                @if (IsExpandable)
+                {
+                    <span>@(Expanded ? "▾" : "▸")</span>
+                }
+            </button>
+            <span class="diff-key">@Node.PropertyName</span><span>:</span>
+        }
+        @if (Node.Children != null && Node.Children.Count > 0) {
+            @if (Expanded)
+            {
+                <span>&nbsp;</span>
+                @if (Node.OriginalKind == JsonValueKind.Array)
+                {
+                    <span class="@GetDiffClass(Node.Kind)">[</span>
+                }
+                else
+                {
+                    <span class="@GetDiffClass(Node.Kind)">{</span>
+                }
+                <ul class="list-unstyled ms-3">
+                    @foreach (var child in Node.Children)
+                    {
+                        <li>
+                            <DiffJsonTree Node="@child" />
+                        </li>
+                    }
+                </ul>
+                @if (Node.OriginalKind == JsonValueKind.Array)
+                {
+                    <span class="@GetDiffClass(Node.Kind)">]</span>
+                }
+                else
+                {
+                    <span class="@GetDiffClass(Node.Kind)">}</span>
+                }
+            }
+            else
+            {
+                @if (Node.OriginalKind == JsonValueKind.Array)
+                {
+                    <span class="diff-value @GetDiffClass(Node.Kind)">&nbsp;[…] @Node.Children.Count items</span>
+                }
+                else
+                {
+                    <span class="diff-value @GetDiffClass(Node.Kind)">&nbsp;{…} @Node.Children.Count props</span>
+                }
+            }
+        }
+        else if ((Node.Children == null || Node.Children.Count == 0) && (Node.After.HasValue || Node.Before.HasValue))
+        {
+            @if (Node.Kind == DiffKind.Modified && Node.Before.HasValue && Node.After.HasValue)
+            {
+                <span class="diff-value">
+                    <span class="diff-removed">@GetSingleValueText(Node, true)</span>
+                    <span> → </span>
+                    <span class="diff-added">@GetSingleValueText(Node, false)</span>
+                </span>
+            }
+            else
+            {
+                <span class="diff-value">&nbsp;@GetValueText(Node)</span>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public JsonDiffNode? Node { get; set; }
+    [Parameter] public bool? ForceExpand { get; set; } // for future use
+
+    private bool Expanded { get; set; }
+    private bool IsExpandable => Node?.Children != null && Node.Children.Count > 0;
+
+    protected override void OnParametersSet()
+    {
+        if (Node != null)
+        {
+            // Expand by default if node is not unchanged
+            if (ForceExpand.HasValue)
+                Expanded = ForceExpand.Value;
+            else if (Node.Kind != DiffKind.Unchanged)
+                Expanded = true;
+            else
+                Expanded = false;
+        }
+    }
+
+    private void Toggle()
+    {
+        if (IsExpandable)
+            Expanded = !Expanded;
+    }
+
+    protected string GetDiffClass(DiffKind kind) => kind switch
+    {
+        DiffKind.Unchanged => "diff-unchanged",
+        DiffKind.Added => "diff-added",
+        DiffKind.Removed => "diff-removed",
+        DiffKind.Modified => "diff-modified",
+        _ => ""
+    };
+
+    protected string GetValueText(JsonDiffNode node)
+    {
+        if (node.PropertyName == "after_unknown")
+            return "<computed>";
+        if (node.Kind == DiffKind.Added && node.After.HasValue)
+        {
+            var value = node.After.Value.ToString();
+            // Check if it's the computed marker
+            if (value == "<<<COMPUTED>>>")
+                return "<computed>";
+            return value;
+        }
+        if (node.Kind == DiffKind.Removed && node.Before.HasValue)
+            return node.Before.Value.ToString();
+        if (node.After.HasValue)
+        {
+            var value = node.After.Value.ToString();
+            // Check if it's the computed marker
+            if (value == "<<<COMPUTED>>>")
+                return "<computed>";
+            return value;
+        }
+        if (node.Before.HasValue)
+            return node.Before.Value.ToString();
+        return "";
+    }
+
+    protected string GetSingleValueText(JsonDiffNode node, bool useBefore)
+    {
+        var jsonValue = useBefore ? node.Before : node.After;
+        if (!jsonValue.HasValue)
+            return "";
+
+        var value = jsonValue.Value.ToString();
+        // Check if it's the computed marker
+        if (value == "<<<COMPUTED>>>")
+            return "<computed>";
+        return value;
+    }
+
+    private bool IsPrimitiveArray(JsonDiffNode node)
+    {
+        // Use OriginalKind to determine if this was an array
+        return node.OriginalKind == JsonValueKind.Array
+         &&
+           node.Children != null && node.Children.Count > 0 && 
+               node.Children.All(c => c.Children == null || c.Children.Count == 0) && 
+               node.Children.All(c => c.PropertyName != null && !c.PropertyName.StartsWith("[") && c.PropertyName != "<<<COMPUTED>>>");
+
+    }
+
+    private string FormatPrimitiveValue(string? value)
+    {
+        if (value == null) return "";
+        
+        // Check for computed marker
+        if (value == "<<<COMPUTED>>>")
+            return "<computed>";
+        
+        // Try to parse as number - if successful, return without quotes
+        if (double.TryParse(value, out _) || value == "true" || value == "false" || value == "null")
+        {
+            return value;
+        }
+        
+        // Otherwise it's a string, add quotes
+        return $"\"{value}\"";
+    }
+}

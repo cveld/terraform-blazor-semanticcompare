@@ -1,0 +1,9 @@
+/* Remove underline from expand/collapse buttons in tree node */
+button,
+button:focus,
+button:hover {
+    text-decoration: none !important;
+    background: none;
+    border: none;
+    box-shadow: none;
+}

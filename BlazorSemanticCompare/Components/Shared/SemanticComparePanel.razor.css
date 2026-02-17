@@ -1,0 +1,11 @@
+/* Only remove underline from expand/collapse buttons if they have a specific class (e.g. .expand-collapse-btn) */
+.expand-collapse-btn,
+.expand-collapse-btn:focus,
+.expand-collapse-btn:hover {
+    text-decoration: none !important;
+    background: none;
+    border: none;
+    box-shadow: none;
+}
+
+/* Remove the global button reset so normal buttons keep their appearance */

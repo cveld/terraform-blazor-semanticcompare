@@ -1,0 +1,4 @@
+/* Globale fix voor alle btn-link knoppen: geen underline */
+.btn-link, .btn-link:hover, .btn-link:focus {
+    text-decoration: none !important;
+}

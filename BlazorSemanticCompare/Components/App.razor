@@ -1,0 +1,44 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["BlazorSemanticCompare.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script>
+        window._clipboardText = null;
+        window.prepareClipboardChunking = async function (chunkSize, maxLength) {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text.length > maxLength) {
+                    window._clipboardText = null;
+                    return { error: `Clipboard content too large (${text.length} chars)` };
+                }
+                window._clipboardText = text;
+                return { totalLength: text.length, chunkCount: Math.ceil(text.length / chunkSize) };
+            } catch (e) {
+                window._clipboardText = null;
+                return { error: e.toString() };
+            }
+        };
+        window.getClipboardChunk = function (chunkSize, chunkIndex) {
+            if (!window._clipboardText) return { error: 'Clipboard not prepared' };
+            const start = chunkIndex * chunkSize;
+            const end = start + chunkSize;
+            return { chunk: window._clipboardText.substring(start, end) };
+        };
+    </script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,298 @@
+@using System.Text.Json
+
+@if (Value.ValueKind == JsonValueKind.Object)
+{
+    <div>
+        <button class="btn btn-link btn-sm p-0 me-1" @onclick="ToggleRoot">
+            @(isRootExpanded ? "▾" : "▸")
+        </button>
+        @if (isRootExpanded)
+        {
+            <span class="text-muted">{</span>
+            <ul class="list-unstyled ms-3">
+                @foreach (var prop in Value.EnumerateObject())
+                {
+                    <li>
+                        @* <button class="btn btn-link btn-sm p-0 me-1" @onclick="() => Toggle(prop.Name)" disabled="@IsLeaf(prop.Value)">
+                            @GetToggleSymbol(prop.Name, prop.Value)
+                        </button> *@
+                        <span class="text-primary">"@prop.Name"</span><span>: </span>
+                        @if (IsLeaf(prop.Value))
+                        {
+                            @RenderLeaf(prop.Value)
+                        }
+                        else
+                        {
+                            <JsonTreeNode Value="@prop.Value" />
+
+                        }
+                        @* else if (IsExpanded(prop.Name))
+                        {
+                            <JsonTreeNode Value="@prop.Value" />
+                        }
+                        else
+                        {
+                            <span class="text-secondary">@GetCollapsedPreview(prop.Value)</span>
+                        } *@
+                        @if (!IsLastProperty(prop.Name))
+                        {
+                            <span>,</span>
+                        }
+                    </li>
+                }
+            </ul>
+            <span class="text-muted">}</span>
+        }
+        else
+        {
+            <span class="text-secondary">@GetCollapsedPreview(Value)</span>
+        }
+    </div>
+}
+else if (Value.ValueKind == JsonValueKind.Array)
+{
+    <div>
+        <button class="btn btn-link btn-sm p-0 me-1" @onclick="ToggleRoot">
+            @(isRootExpanded ? "▾" : "▸")
+        </button>
+        @if (isRootExpanded)
+        {
+            <span class="text-muted">[</span>
+            @if (Value.GetArrayLength() == 0)
+            {
+                <span class="text-muted">]</span>
+            }
+            else if (UseVirtualize)
+            {
+                <div class="ms-3">
+                    <Virtualize Context="item" ItemsProvider="LoadItems" ItemSize="20">
+                        <div>
+                            @RenderArrayItem(item.Index, item.Element)
+                        </div>
+                    </Virtualize>
+                </div>
+                <span class="text-muted">]</span>
+            }
+            else
+            {
+                <ul class="list-unstyled ms-3">
+                    @foreach (var (idx, el) in EnumerateArray(Value))
+                    {
+                        <li>
+                            @RenderArrayItem(idx, el)
+                            @if (idx < Value.GetArrayLength() - 1)
+                            {
+                                <span>,</span>
+                            }
+                        </li>
+                    }
+                </ul>
+                <span class="text-muted">]</span>
+            }
+        }
+        else
+        {
+            <span class="text-secondary">@GetCollapsedPreview(Value)</span>
+        }
+    </div>
+}
+else
+{
+    @RenderLeaf(Value)
+}
+
+@code {
+[Parameter] public JsonElement Value { get; set; }
+[Parameter] public bool InitiallyExpanded { get; set; }
+
+private HashSet<string> expandedProps = [];
+private bool isRootExpanded = false;
+
+    protected override void OnParametersSet()
+    {
+        if (InitiallyExpanded)
+        {
+            if (Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in Value.EnumerateObject())
+                {
+                    if (IsLeaf(prop.Value))
+                        continue;
+
+                    if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() > 200)
+                        continue;
+
+                    expandedProps.Add(prop.Name);
+                }
+            }
+        }
+    }
+
+    private bool UseVirtualize => Value.ValueKind == JsonValueKind.Array && Value.GetArrayLength() > 500;
+
+    private void ToggleRoot()
+    {
+        isRootExpanded = !isRootExpanded;
+    }
+
+    private void Toggle(string key)
+    {
+        if (!expandedProps.Add(key))
+        {
+            expandedProps.Remove(key);
+        }
+    }
+
+    private bool IsExpanded(string key) => expandedProps.Contains(key);
+
+    private static bool IsLeaf(JsonElement el)
+        => el.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False or JsonValueKind.Null;
+
+    private RenderFragment RenderLeaf(JsonElement el) => builder =>
+    {
+        var seq = 0;
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.String:
+                var strValue = el.GetString();
+                // Check if this is a computed value marker (after HTML decoding)
+                if (strValue == "<<<COMPUTED>>>")
+                {
+                    builder.OpenElement(seq++, "em");
+                    builder.AddContent(seq++, "<computed>");
+                    builder.CloseElement();
+                }
+                else
+                {
+                    builder.OpenElement(seq++, "span");
+                    builder.AddAttribute(seq++, "class", "text-success");
+                    builder.AddContent(seq++, $"\"{System.Net.WebUtility.HtmlEncode(strValue)}\"");
+                    builder.CloseElement();
+                }
+                break;
+            case JsonValueKind.Number:
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "text-info");
+                builder.AddContent(seq++, el.GetRawText());
+                builder.CloseElement();
+                break;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "text-warning");
+                builder.AddContent(seq++, el.GetBoolean().ToString().ToLower());
+                builder.CloseElement();
+                break;
+            case JsonValueKind.Null:
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "text-muted");
+                builder.AddContent(seq++, "null");
+                builder.CloseElement();
+                break;
+            default:
+                builder.AddContent(seq++, el.GetRawText());
+                break;
+        }
+    };
+
+    private string GetCollapsedPreview(JsonElement el)
+    {
+        return el.ValueKind switch
+        {
+            JsonValueKind.Object => $"{{…}} {el.EnumerateObject().Count()} props",
+            JsonValueKind.Array => $"[…] {el.GetArrayLength()} items",
+            _ => el.GetRawText()
+        };
+    }
+
+    private bool IsLastProperty(string name)
+    {
+        string? last = null;
+        foreach (var p in Value.EnumerateObject()) last = p.Name;
+        return last == name;
+    }
+
+    private IEnumerable<(int Index, JsonElement Element)> EnumerateArray(JsonElement array)
+    {
+        var i = 0;
+        foreach (var el in array.EnumerateArray())
+        {
+            yield return (i++, el);
+        }
+    }
+
+    private record ArrayItem(int Index, JsonElement Element);
+
+    private async ValueTask<ItemsProviderResult<ArrayItem>> LoadItems(ItemsProviderRequest request)
+    {
+        var total = Value.GetArrayLength();
+        var count = Math.Min(request.Count, Math.Max(0, total - request.StartIndex));
+        var list = new List<ArrayItem>(count);
+        var i = 0;
+        foreach (var el in Value.EnumerateArray().Skip(request.StartIndex).Take(count))
+        {
+            list.Add(new ArrayItem(request.StartIndex + i, el));
+            i++;
+        }
+        return new ItemsProviderResult<ArrayItem>(list, total);
+    }
+
+    private RenderFragment RenderArrayItem(int index, JsonElement el) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "d-flex");
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "text-muted me-2");
+        builder.AddContent(seq++, index);
+        builder.CloseElement();
+
+        if (IsLeaf(el))
+        {
+            builder.AddContent(seq++, RenderLeaf(el));
+        }
+        else
+        {
+            var key = $"[{index}]";
+            //var expanded = expandedProps.Contains(key);
+            // builder.OpenElement(seq++, "button");
+            // builder.AddAttribute(seq++, "class", "btn btn-link btn-sm p-0 me-1");
+            // builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => Toggle(key)));
+            // builder.AddContent(seq++, expanded ? "▾" : "▸");
+            // builder.CloseElement();
+
+            //if (expanded)
+            if (true)
+            {
+                builder.AddContent(seq++, (RenderFragment)(b =>
+                {
+                    var s = 0;
+                    b.AddContent(s++, " ");
+                    b.OpenComponent<JsonTreeNode>(s++);
+                    b.AddAttribute(s++, "Value", el);
+                    b.CloseComponent();
+                }));
+            }
+            else
+            {
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "text-secondary");
+                builder.AddContent(seq++, GetCollapsedPreview(el));
+                builder.CloseElement();
+            }
+        }
+
+        if (index < Value.GetArrayLength() - 1)
+        {
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "ms-1");
+            builder.AddContent(seq++, ",");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private string GetToggleSymbol(string key, JsonElement el)
+        => IsLeaf(el) ? "" : (IsExpanded(key) ? "▾" : "▸");
+}

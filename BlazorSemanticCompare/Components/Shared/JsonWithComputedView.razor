@@ -1,0 +1,38 @@
+@using System.Text.Json
+@using BlazorSemanticCompare.Helpers
+
+@* Renders a JsonElement with hierarchical <computed> replacement based on afterUnknown *@
+
+@if (Value.HasValue)
+{
+    if (AfterUnknown.HasValue && AfterUnknown.Value.ValueKind == JsonValueKind.True)
+    {
+        <em>&lt;computed&gt;</em>
+    }
+    else if (Value.Value.ValueKind == JsonValueKind.Object || Value.Value.ValueKind == JsonValueKind.Array)
+    {
+        var merged = JsonComputedMerger.MergeAfterWithComputed(Value, AfterUnknown);
+        var json = JsonSerializer.Serialize(merged, new JsonSerializerOptions { WriteIndented = true });
+        json = JsonComputedMerger.ReplaceComputedMarkers(json);
+        
+        @* Parse back to JsonElement for tree display *@
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            <JsonTreeNode Value="@doc.RootElement.Clone()" InitiallyExpanded="false" />
+        }
+        catch
+        {
+            <pre style="margin: 0; white-space: pre-wrap;">@json</pre>
+        }
+    }
+    else
+    {
+        @Value.Value.ToString()
+    }
+}
+
+@code {
+    [Parameter] public JsonElement? Value { get; set; }
+    [Parameter] public JsonElement? AfterUnknown { get; set; }
+}
