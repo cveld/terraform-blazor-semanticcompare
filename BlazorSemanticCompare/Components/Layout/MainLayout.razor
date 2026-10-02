@@ -1,18 +1,14 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@using System.Reflection
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
         <article class="content px-4">
             @Body
         </article>
+        <footer class="app-footer px-4">
+            Version @Version &middot; built on @BuildDate (UTC)
+        </footer>
     </main>
 </div>
 
@@ -21,3 +17,14 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private static readonly Assembly Asm = typeof(MainLayout).Assembly;
+
+    private static string Version =>
+        (Asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown").Split('+')[0];
+
+    private static string BuildDate =>
+        Asm.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "BuildDate")?.Value ?? "unknown";
+}
+

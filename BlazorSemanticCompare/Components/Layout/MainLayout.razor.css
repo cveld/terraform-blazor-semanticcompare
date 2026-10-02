@@ -96,3 +96,11 @@ main {
         right: 0.75rem;
         top: 0.5rem;
     }
+
+.app-footer {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    color: #6c757d;
+    font-size: 0.8rem;
+    border-top: 1px solid #d6d5d5;
+}
