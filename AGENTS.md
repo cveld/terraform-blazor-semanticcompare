@@ -29,5 +29,6 @@ There are currently no automated tests; verify changes by building and, for UI c
 - Component styling goes in scoped `*.razor.css` files next to the component.
 - Put diff/JSON logic in `Services` or `Helpers`, not in `.razor` code blocks.
 - Existing code comments are partly Dutch; either language is fine, stay consistent within a file.
+- Documentation (e.g. `README.md`) is written in English.
 - Don't commit `bin/`, `obj/`, or `*.user` files; keep changes surgical and don't edit `wwwroot/lib` (vendored Bootstrap).
 - Do not commit or push unless explicitly asked.
