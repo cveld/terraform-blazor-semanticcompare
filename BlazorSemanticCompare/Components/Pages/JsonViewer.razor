@@ -5,6 +5,7 @@
 @using BlazorSemanticCompare.Components.Shared
 @using BlazorSemanticCompare.Models
 @using BlazorSemanticCompare.Helpers
+@using Microsoft.AspNetCore.Components.Forms
 @implements IDisposable
 @inject IConfiguration Configuration
 
@@ -23,7 +24,11 @@
     <button class="btn btn-primary me-2" @onclick="() => LoadJsonFile(JsonFilePathFirewall)">Load JSON File Firewall</button>
     <button class="btn btn-primary me-2" @onclick="() => LoadJsonFile(JsonFilePathAppGateway)">Load JSON File App Gateway</button>
     }
-    <button class="btn btn-secondary" @onclick="LoadFromClipboard">Import json plan from clipboard</button>
+    <button class="btn btn-secondary me-2" @onclick="LoadFromClipboard">Import json plan from clipboard</button>
+    <label class="btn btn-secondary mb-0 me-2" style="cursor: pointer;">
+        Upload json plan from file
+        <InputFile OnChange="LoadFromFile" accept=".json,application/json,.txt" hidden />
+    </label>
     @if (!string.IsNullOrEmpty(errorMessage))
     {
         <div class="alert alert-danger mt-2">@errorMessage</div>
@@ -68,6 +73,10 @@ else if (jsonData != null)
                     <ResourceChangesComponent ResourceChanges="@resourceChanges" 
                                             OnSemanticCompare="@HandleSemanticCompare" 
                                             TreatEmptyAsNull="@treatEmptyAsNull" />
+                    @if (resourceChanges.Count == 0)
+                    {
+                        <div class="alert alert-info mt-4 mb-0">This plan does not contain any changes.</div>
+                    }
                 </div>
             </div>
         </div>
@@ -258,6 +267,7 @@ else if (jsonData != null)
     public void Dispose()
     {
         jsonData?.Dispose();
+        dotNetRef?.Dispose();
     }
 
     private bool IsObjectOrArray(JsonElement? element, string propertyName)
@@ -388,6 +398,90 @@ else if (jsonData != null)
         StateHasChanged();
     }
 
+    private DotNetObjectReference<JsonViewer>? dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("window.registerWebMcpTools", dotNetRef);
+            }
+            catch (Exception)
+            {
+                // WebMCP is optional; ignore when unsupported
+            }
+        }
+    }
+
+    // Called by the WebMCP "load-terraform-plan" tool
+    [JSInvokable]
+    public async Task<string> LoadTerraformPlanFromTool(string planJson)
+    {
+        string? error = null;
+        await InvokeAsync(() => { error = LoadFromText(planJson, "(from WebMCP tool)"); });
+        if (error is not null) return "Error: " + error;
+        return $"Loaded terraform plan with {resourceChanges.Count} resource changes.";
+    }
+
+    private async Task LoadFromFile(InputFileChangeEventArgs e)
+    {
+        isLoading = true;
+        errorMessage = null;
+        rawJsonContent = null;
+        showRaw = false;
+        showTree = false;
+        StateHasChanged();
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(MaxClipboardLength);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync();
+            errorMessage = LoadFromText(text, file.Name);
+        }
+        catch (IOException ex)
+        {
+            errorMessage = $"Fout bij lezen van bestand (max {MaxClipboardLength / 1_000_000} MB): {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fout bij lezen van bestand: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string? LoadFromText(string text, string name)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "Input is empty.";
+        try
+        {
+            var doc = JsonDocument.Parse(text);
+            jsonData?.Dispose();
+            jsonData = doc;
+            fileName = name;
+            resourceChanges = ExtractResourceChanges(jsonData);
+            rawJsonContent = text;
+            showRaw = false;
+            showTree = false;
+            errorMessage = null;
+            StateHasChanged();
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            errorMessage = $"Invoer is geen geldige JSON: {ex.Message}";
+            StateHasChanged();
+            return errorMessage;
+        }
+    }
+
     private async Task LoadFromClipboard()
     {
         isLoading = true;
@@ -454,4 +548,4 @@ else if (jsonData != null)
     }
 }
 
-                    <div class="mb-3">Go to <a href="https://github.com/cveld">https://github.com/cveld</a> for support</div>
+                    <div class="mb-3">Go to <a href="https://github.com/cveld/terraform-blazor-semanticcompare">https://github.com/cveld/terraform-blazor-semanticcompare</a> for support</div>

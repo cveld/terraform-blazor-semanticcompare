@@ -37,6 +37,45 @@
             const end = start + chunkSize;
             return { chunk: window._clipboardText.substring(start, end) };
         };
+        window.registerWebMcpTools = function (dotNetRef) {
+            if (!navigator.modelContext || !navigator.modelContext.registerTool) return;
+            try {
+                navigator.modelContext.registerTool({
+                    name: 'load-terraform-plan',
+                    description: 'Loads a terraform plan in JSON format (output of "terraform show -json") into the semantic compare viewer.',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            plan: { type: 'string', description: 'The terraform plan JSON content as a string.' },
+                            url: { type: 'string', description: 'URL to fetch the terraform plan JSON from (must allow CORS). Used when plan is not provided.' }
+                        }
+                    },
+                    execute: async (args) => {
+                        let plan = args.plan;
+                        if (plan === undefined || plan === null || plan === '') {
+                            if (!args.url) {
+                                return { content: [{ type: 'text', text: 'Error: provide either "plan" or "url".' }], isError: true };
+                            }
+                            try {
+                                const response = await fetch(args.url);
+                                if (!response.ok) {
+                                    return { content: [{ type: 'text', text: `Error: fetching url failed with HTTP ${response.status}.` }], isError: true };
+                                }
+                                plan = await response.text();
+                            } catch (e) {
+                                return { content: [{ type: 'text', text: `Error: fetching url failed: ${e}` }], isError: true };
+                            }
+                        } else if (typeof plan !== 'string') {
+                            plan = JSON.stringify(plan);
+                        }
+                        const result = await dotNetRef.invokeMethodAsync('LoadTerraformPlanFromTool', plan);
+                        return { content: [{ type: 'text', text: result }] };
+                    }
+                });
+            } catch (e) {
+                console.warn('WebMCP registration failed', e);
+            }
+        };
     </script>
     <script src="_framework/blazor.web.js"></script>
 </body>
