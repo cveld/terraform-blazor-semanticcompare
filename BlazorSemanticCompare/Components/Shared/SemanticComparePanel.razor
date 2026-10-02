@@ -48,6 +48,10 @@
             <strong>Differences:</strong>
             @if (DiffRoot != null)
             {
+                @if (DiffRoot.Kind == DiffKind.Unchanged)
+                {
+                    <div class="alert alert-success py-1 px-2 mt-2 mb-0">No semantic difference</div>
+                }
                 <div class="bg-light p-2 border rounded mt-2" style="max-height: 400px; overflow:auto;">
                     <DiffJsonTree Node="@DiffRoot" />
                 </div>

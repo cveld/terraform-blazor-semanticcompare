@@ -114,24 +114,23 @@ namespace BlazorSemanticCompare.Services
                         var primitiveArrayKind = primitiveDiffChildren.All(c => c.Kind == DiffKind.Unchanged) ? DiffKind.Unchanged : DiffKind.Modified;
                         return new JsonDiffNode { PropertyName = propertyName, Kind = primitiveArrayKind, Children = primitiveDiffChildren, Before = before, After = after, OriginalKind = JsonValueKind.Array };
                     }
-                    // Array of objects with 'name' property: sort by name
-                    if (b.GetArrayLength() > 0 && b[0].ValueKind == JsonValueKind.Object && b[0].TryGetProperty("name", out _) &&
-                        a.GetArrayLength() > 0 && a[0].ValueKind == JsonValueKind.Object && a[0].TryGetProperty("name", out _))
+                    // Array of objects with a unique 'name' (or else 'id') property: match by that key
+                    var keyProp = FindArrayKeyProperty(b, a);
+                    if (keyProp != null)
                     {
-                        var bArr = b.EnumerateArray().OrderBy(x => x.GetProperty("name").GetString()).ToList();
-                        var aArr = a.EnumerateArray().OrderBy(x => x.GetProperty("name").GetString()).ToList();
-                        var allNames = bArr.Select(x => x.GetProperty("name").GetString()).Union(aArr.Select(x => x.GetProperty("name").GetString())).OrderBy(x => x).ToList();
-                        var nameDiffChildren = new List<JsonDiffNode>();
-                        foreach (var name in allNames)
+                        var bByKey = b.EnumerateArray().ToDictionary(x => x.GetProperty(keyProp).GetString()!);
+                        var aByKey = a.EnumerateArray().ToDictionary(x => x.GetProperty(keyProp).GetString()!);
+                        var allKeys2 = bByKey.Keys.Union(aByKey.Keys).OrderBy(x => x, StringComparer.Ordinal).ToList();
+                        var keyDiffChildren = new List<JsonDiffNode>();
+                        foreach (var key in allKeys2)
                         {
-                            var bObj = bArr.FirstOrDefault(x => x.GetProperty("name").GetString() == name);
-                            var aObj = aArr.FirstOrDefault(x => x.GetProperty("name").GetString() == name);
-                            nameDiffChildren.Add(Compare(bObj.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : bObj, aObj.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : aObj, name, treatEmptyAsNull));
+                            JsonElement? bObj = bByKey.TryGetValue(key, out var bv) ? bv : null;
+                            JsonElement? aObj = aByKey.TryGetValue(key, out var av) ? av : null;
+                            keyDiffChildren.Add(Compare(bObj, aObj, key, treatEmptyAsNull));
                         }
-                        var nameArrayKind = nameDiffChildren.All(c => c.Kind == DiffKind.Unchanged) ? DiffKind.Unchanged : DiffKind.Modified;
-                        return new JsonDiffNode { PropertyName = propertyName, Kind = nameArrayKind, Children = nameDiffChildren, Before = before, After = after, OriginalKind = JsonValueKind.Array };
-                    }
-                    // Default: compare by index
+                        var keyArrayKind = keyDiffChildren.All(c => c.Kind == DiffKind.Unchanged) ? DiffKind.Unchanged : DiffKind.Modified;
+                        return new JsonDiffNode { PropertyName = propertyName, Kind = keyArrayKind, Children = keyDiffChildren, Before = before, After = after, OriginalKind = JsonValueKind.Array };
+                    }                    // Default: compare by index
                     var bList = b.EnumerateArray().ToList();
                     var aList = a.EnumerateArray().ToList();
                     var maxLen = Math.Max(bList.Count, aList.Count);
@@ -147,6 +146,31 @@ namespace BlazorSemanticCompare.Services
                         return new JsonDiffNode { PropertyName = propertyName, Kind = DiffKind.Unchanged, Before = before, After = after };
                     return new JsonDiffNode { PropertyName = propertyName, Kind = DiffKind.Modified, Before = before, After = after };
             }
+        }
+
+        private static readonly string[] ArrayKeyProperties = { "name", "id" };
+
+        private static string? FindArrayKeyProperty(JsonElement b, JsonElement a)
+        {
+            foreach (var prop in ArrayKeyProperties)
+            {
+                if (HasUniqueStringKey(b, prop) && HasUniqueStringKey(a, prop))
+                    return prop;
+            }
+            return null;
+        }
+
+        private static bool HasUniqueStringKey(JsonElement array, string prop)
+        {
+            if (array.GetArrayLength() == 0) return false;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in array.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(prop, out var v) || v.ValueKind != JsonValueKind.String)
+                    return false;
+                if (!seen.Add(v.GetString()!)) return false;
+            }
+            return true;
         }
 
         private bool IsPrimitive(JsonValueKind kind) =>
