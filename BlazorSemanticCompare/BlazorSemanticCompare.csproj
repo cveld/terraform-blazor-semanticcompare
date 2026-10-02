@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.1.0</Version> <!-- x-release-please-version -->
+    <Version>0.2.0</Version> <!-- x-release-please-version -->
     <BuildDate>$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm"))</BuildDate>
   </PropertyGroup>
 
