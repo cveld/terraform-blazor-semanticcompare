@@ -55,7 +55,7 @@ Failed attempts are rate limited per client address. The code registry is in-mem
 
 ## Getting started
 
-Requires the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
 dotnet build BlazorSemanticCompare.sln

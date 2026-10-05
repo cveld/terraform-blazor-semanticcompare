@@ -3,7 +3,7 @@
 > Lees ook `AGENTS.local.md` (niet in git) als het bestaat; die verwijst naar persoonlijke Azure- en deployment-instructies buiten de repo.
 
 ## Project
-Blazor Web App (.NET 9, Interactive Server rendering) that visualizes and semantically compares Terraform plan JSON (`resource_changes` with `before` / `after` / `after_unknown`).
+Blazor Web App (.NET 10, Interactive Server rendering) that visualizes and semantically compares Terraform plan JSON (`resource_changes` with `before` / `after` / `after_unknown`).
 
 ## Structure
 - `BlazorSemanticCompare.sln` – solution
