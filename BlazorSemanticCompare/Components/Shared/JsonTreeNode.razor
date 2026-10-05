@@ -261,25 +261,15 @@ private bool isRootExpanded = false;
             // builder.AddContent(seq++, expanded ? "▾" : "▸");
             // builder.CloseElement();
 
-            //if (expanded)
-            if (true)
+            // Array items are always expanded (the collapse toggle above is disabled).
+            builder.AddContent(seq++, (RenderFragment)(b =>
             {
-                builder.AddContent(seq++, (RenderFragment)(b =>
-                {
-                    var s = 0;
-                    b.AddContent(s++, " ");
-                    b.OpenComponent<JsonTreeNode>(s++);
-                    b.AddAttribute(s++, "Value", el);
-                    b.CloseComponent();
-                }));
-            }
-            else
-            {
-                builder.OpenElement(seq++, "span");
-                builder.AddAttribute(seq++, "class", "text-secondary");
-                builder.AddContent(seq++, GetCollapsedPreview(el));
-                builder.CloseElement();
-            }
+                var s = 0;
+                b.AddContent(s++, " ");
+                b.OpenComponent<JsonTreeNode>(s++);
+                b.AddAttribute(s++, "Value", el);
+                b.CloseComponent();
+            }));
         }
 
         if (index < Value.GetArrayLength() - 1)
