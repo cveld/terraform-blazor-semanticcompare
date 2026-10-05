@@ -1,0 +1,70 @@
+@page "/agent-setup"
+
+<PageTitle>Agent setup</PageTitle>
+
+<h1>Agent setup</h1>
+
+<p>
+    Let a coding agent push a Terraform plan JSON straight into the page you have open, without the
+    clipboard and without the plan passing through the model context.
+</p>
+
+<h4>How it works</h4>
+<ol>
+    <li>The agent opens <a href="">this site</a> in a browser tab.</li>
+    <li>The page shows an <strong>agent code</strong> (element <code>#agent-code</code>).</li>
+    <li>The agent sends the plan file to the API with that code as a bearer token.</li>
+    <li>The plan lives only as long as that page is connected. When the connection drops, it is released after a short grace period (about 2 minutes). Refreshing the page gives a new code.</li>
+</ol>
+
+<h4>API</h4>
+<pre class="bg-light p-3 border rounded"><code>POST /api/plan
+Authorization: Bearer &lt;agent code&gt;
+Content-Type: application/json
+
+&lt;plan JSON, max 20 MB&gt;</code></pre>
+<ul>
+    <li><code>200</code> &mdash; loaded; body <code>{"resourceChanges": n}</code></li>
+    <li><code>400</code> &mdash; not valid JSON; body <code>{"error": "..."}</code></li>
+    <li><code>401</code> &mdash; unknown or expired code (read the current code from the open page)</li>
+    <li><code>413</code> &mdash; plan too large</li>
+    <li><code>429</code> &mdash; too many failed attempts from this address</li>
+</ul>
+
+<h4>Examples</h4>
+<p>PowerShell:</p>
+<pre class="bg-light p-3 border rounded"><code>Invoke-RestMethod -Method Post -Uri @(ApiUrl) `
+    -Headers @@{ Authorization = "Bearer $code" } `
+    -ContentType application/json -InFile terraform.plan.json</code></pre>
+<p>curl:</p>
+<pre class="bg-light p-3 border rounded"><code>curl -sS -X POST @(ApiUrl) \
+    -H "Authorization: Bearer $CODE" \
+    -H "Content-Type: application/json" \
+    --data-binary @@terraform.plan.json</code></pre>
+
+<h4>Looking ahead: WebMCP</h4>
+<p>
+    <a href="https://github.com/webmachinelearning/webmcp">WebMCP</a> is an emerging proposal that lets a web page
+    expose tools to the browser's agent through <code>navigator.modelContext</code>. This app already registers a
+    <code>load-terraform-plan</code> tool for it when the browser supports it, and the tool loads the plan through the
+    same code path as the API.
+</p>
+<p>
+    Once agent browsers expose WebMCP, an agent that has this page open can call that tool directly. There would be
+    no code to read and no HTTP call to make. Until then, most agent browser panes do not support it, so the API above
+    remains the way to go. It will stay available afterwards as a fallback for agents without WebMCP support.
+</p>
+
+<h4>One-time skill onboarding</h4>
+<p>
+    Copy the <code>semantic-compare-plan</code> skill from the
+    <a href="https://github.com/cveld/terraform-blazor-semanticcompare/tree/main/.claude/skills/semantic-compare-plan">repository</a>
+    to <code>~/.claude/skills/semantic-compare-plan</code> (or your agent's equivalent skills folder).
+    After that, ask the agent to open a plan in Semantic Compare; it reads the code from the page and posts the file.
+</p>
+
+@code {
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private string ApiUrl => Navigation.ToAbsoluteUri("api/plan").ToString();
+}

@@ -24,6 +24,16 @@ Workflow:
 2. `terraform show -json terraform.plan | clip` (Windows) or `pbcopy` (macOS)
 3. In the app, choose **Import json plan from clipboard** (or upload the JSON file) and open the semantic compare for the changed property.
 
+## Agent API
+
+A coding agent can push a plan into the page you have open, without the clipboard:
+
+1. The page shows an **agent code** (`#agent-code`).
+2. `POST /api/plan` with `Authorization: Bearer <code>` and the plan JSON as body (max 20 MB).
+3. The plan lives only as long as that page's Blazor connection. After a connection drop it is released once the circuit expires (`DisconnectedCircuitRetentionPeriod`, 2 minutes). A page refresh gives a new code.
+
+Failed attempts are rate limited per client address. The code registry is in-memory, so this requires **a single replica** (the Container App must keep `maxReplicas: 1`). See `/agent-setup` in the app for examples and the skill onboarding.
+
 ## Features
 
 - Paste or load a plan JSON and inspect each resource change

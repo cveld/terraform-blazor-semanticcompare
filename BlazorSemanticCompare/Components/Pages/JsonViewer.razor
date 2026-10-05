@@ -5,9 +5,11 @@
 @using BlazorSemanticCompare.Components.Shared
 @using BlazorSemanticCompare.Models
 @using BlazorSemanticCompare.Helpers
+@using BlazorSemanticCompare.Services
 @using Microsoft.AspNetCore.Components.Forms
 @implements IDisposable
 @inject IConfiguration Configuration
+@inject AgentSession Agent
 
 <PageTitle>Terraform JSON Semantic Compare</PageTitle>
 
@@ -25,31 +27,53 @@
     <button class="btn btn-primary me-2" @onclick="() => LoadJsonFile(JsonFilePathAppGateway)">Load JSON File App Gateway</button>
     }
     <button class="btn btn-secondary me-2" @onclick="LoadFromClipboard">Import json plan from clipboard</button>
-    <label class="btn btn-secondary mb-0 me-2" style="cursor: pointer;">
+    <label for="terraform-plan-upload" class="btn btn-secondary mb-0 me-2">
         Upload json plan from file
-        <InputFile OnChange="LoadFromFile" accept=".json,application/json,.txt" hidden />
     </label>
+    <InputFile id="terraform-plan-upload"
+               name="terraform-plan"
+               class="visually-hidden"
+               OnChange="LoadFromFile"
+               accept=".json,application/json,.txt"
+               aria-label="Upload Terraform plan JSON"
+               aria-describedby="terraform-plan-upload-description"
+               data-testid="terraform-plan-upload" />
+    <span id="terraform-plan-upload-description" class="visually-hidden">
+        Select a Terraform plan JSON file. Accepted formats are JSON and text, up to 20 MB.
+    </span>
     @if (!string.IsNullOrEmpty(errorMessage))
     {
-        <div class="alert alert-danger mt-2">@errorMessage</div>
+        <div class="alert alert-danger mt-2" role="alert" data-testid="plan-error">@errorMessage</div>
     }
 </div>
 
+@if (isInteractive)
+{
+    <div class="mb-3 small text-muted" data-testid="agent-connection">
+        Agent code: <code id="agent-code" data-testid="agent-code">@Agent.Code</code>
+        &mdash; an agent can push a plan to this page with this code while it stays open.
+        <a href="agent-setup">Setup instructions</a>
+    </div>
+}
+
 @if (isLoading)
 {
-    <div class="d-flex align-items-center">
+    <div class="d-flex align-items-center" role="status" aria-live="polite" data-testid="plan-loading">
         <div class="spinner-border spinner-border-sm me-2" role="status"></div>
         <span>Loading JSON file...</span>
     </div>
 }
 else if (jsonData != null)
 {
+    <div class="visually-hidden" role="status" aria-live="polite" data-testid="plan-loaded">
+        Loaded Terraform plan: @fileName. @resourceChanges.Count resource changes.
+    </div>
     <div class="row">
         <div class="col-12">
             <h3>JSON Content</h3>
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span title="@JsonFilePath">File: @fileName</span>
+                    <span title="@JsonFilePath" data-testid="plan-file-name">File: @fileName</span>
                     <div>
                         <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ToggleTreeVisibility">
                             @(showTree ? "Hide Tree" : "Show Tree")
@@ -75,7 +99,7 @@ else if (jsonData != null)
                                             TreatEmptyAsNull="@treatEmptyAsNull" />
                     @if (resourceChanges.Count == 0)
                     {
-                        <div class="alert alert-info mt-4 mb-0">This plan does not contain any changes.</div>
+                        <div class="alert alert-info mt-4 mb-0" role="status" data-testid="plan-no-changes">This plan does not contain any changes.</div>
                     }
                 </div>
             </div>
@@ -266,6 +290,7 @@ else if (jsonData != null)
 
     public void Dispose()
     {
+        if (Agent.PlanHandler == LoadFromAgent) Agent.PlanHandler = null;
         jsonData?.Dispose();
         dotNetRef?.Dispose();
     }
@@ -399,11 +424,28 @@ else if (jsonData != null)
     }
 
     private DotNetObjectReference<JsonViewer>? dotNetRef;
+    private bool isInteractive; // the agent code belongs to the circuit, so only show it once interactive
+
+    protected override void OnInitialized()
+    {
+        Agent.PlanHandler = LoadFromAgent;
+    }
+
+    private async Task<AgentPlanResult> LoadFromAgent(string planJson)
+    {
+        string? error = null;
+        await InvokeAsync(() => { error = LoadFromText(planJson, "(from agent)"); });
+        return error is null
+            ? new AgentPlanResult(true, resourceChanges.Count, null)
+            : new AgentPlanResult(false, 0, error);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            isInteractive = true;
+            StateHasChanged();
             dotNetRef = DotNetObjectReference.Create(this);
             try
             {
