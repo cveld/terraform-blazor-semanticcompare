@@ -20,7 +20,15 @@
                                 <span>@(expandedResourceIndexes.Contains(idx) ? "▼" : "▶")</span>
                             </button>
                             <span class="badge @GetActionBadgeClass(rc.Action)">@rc.Action</span>
-                            <strong>@rc.GetDisplayPath()</strong> 
+                            <strong>@rc.GetDisplayPath()</strong>
+                            @if (rc.IsReplace && rc.GetReplaceReasonText() is { } reason)
+                            {
+                                <span class="badge bg-secondary ms-2" title="@rc.ActionReason">@reason</span>
+                            }
+                            @if (rc.ReplacePaths.Count > 0)
+                            {
+                                <span class="text-muted small ms-2">forced by: @string.Join(", ", rc.ReplacePaths)</span>
+                            }
                         </div>
                     </div>
                     @if (expandedResourceIndexes.Contains(idx))
@@ -38,8 +46,12 @@
                                     <tbody>
                                         @foreach (var prop in GetChangedPropertyNames(rc.Before, rc.After, rc.AfterUnknown))
                                         {
-                                            <tr>
+                                            <tr class="@(rc.ForcesReplacement(prop) ? "table-danger" : null)">
                                                 <td style="position: relative; vertical-align: top;">
+                                                    @if (rc.ForcesReplacement(prop))
+                                                    {
+                                                        <span class="badge bg-danger me-2" title="This attribute forces replacement">forces replacement</span>
+                                                    }
                                                     <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => OnSemanticCompare.InvokeAsync((rc, prop))">Semantic Compare</button>
                                                     @prop
                                                 </td>
@@ -138,7 +150,7 @@ private HashSet<int> expandedResourceIndexes = new();
         {
             return JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true });
         }
-        catch { return element.ToString(); }
+        catch { return element.ToString() ?? string.Empty; }
     }
 
     private string GetPropertyValue(JsonElement? element, string propertyName)

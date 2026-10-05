@@ -180,7 +180,7 @@ else if (jsonData != null)
             jsonData?.Dispose();
             jsonData = await JsonDocument.ParseAsync(stream);
             fileName = Path.GetFileName(JsonFilePath);
-            resourceChanges = ExtractResourceChanges(jsonData);
+            resourceChanges = ResourceChangeExtractor.Extract(jsonData);
         }
         catch (JsonException ex)
         {
@@ -240,52 +240,7 @@ else if (jsonData != null)
         {
             return JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true });
         }
-        catch { return element.ToString(); }
-    }
-
-    private List<ResourceChange> ExtractResourceChanges(JsonDocument? doc)
-    {
-        var result = new List<ResourceChange>();
-        if (doc == null) return result;
-        if (!doc.RootElement.TryGetProperty("resource_changes", out var changesArray))
-            return result;
-        foreach (var item in changesArray.EnumerateArray())
-        {
-            if (!item.TryGetProperty("change", out var changeObj)) continue;
-            if (!changeObj.TryGetProperty("actions", out var actionsArray)) continue;
-            if (actionsArray.GetArrayLength() == 0) continue;
-            
-            var actionsList = actionsArray.EnumerateArray().Select(a => a.GetString()).ToList();
-            var action = (actionsList.Contains("delete") && actionsList.Contains("create")) 
-                ? "replace" 
-                : actionsArray[0].GetString();
-            
-            if (!string.Equals(action, "no-op", StringComparison.OrdinalIgnoreCase))
-            {
-                var type = item.TryGetProperty("type", out var t) ? t.GetString() : "?";
-                var name = item.TryGetProperty("name", out var n) ? n.GetString() : "?";
-                string address = string.Empty;
-                if (item.TryGetProperty("address", out var addressProp))
-                {
-                    address = addressProp.GetString() ?? string.Empty;
-                }
-                JsonElement? before = null, after = null, afterUnknown = null;
-                if (changeObj.TryGetProperty("before", out var beforeVal)) before = beforeVal;
-                if (changeObj.TryGetProperty("after", out var afterVal)) after = afterVal;
-                if (changeObj.TryGetProperty("after_unknown", out var afterUnknownVal)) afterUnknown = afterUnknownVal;
-                result.Add(new ResourceChange
-                {
-                    Address = address,
-                    Type = type ?? "?",
-                    Name = name ?? "?",
-                    Action = action ?? "?",
-                    Before = before,
-                    After = after,
-                    AfterUnknown = afterUnknown
-                });
-            }
-        }
-        return result;
+        catch { return element.ToString() ?? string.Empty; }
     }
 
     public void Dispose()
@@ -508,7 +463,7 @@ else if (jsonData != null)
             jsonData?.Dispose();
             jsonData = doc;
             fileName = name;
-            resourceChanges = ExtractResourceChanges(jsonData);
+            resourceChanges = ResourceChangeExtractor.Extract(jsonData);
             rawJsonContent = text;
             showRaw = false;
             showTree = false;
@@ -569,7 +524,7 @@ else if (jsonData != null)
                     jsonData?.Dispose();
                     jsonData = JsonDocument.Parse(clipboardText);
                     fileName = "(from clipboard)";
-                    resourceChanges = ExtractResourceChanges(jsonData);
+                    resourceChanges = ResourceChangeExtractor.Extract(jsonData);
                     rawJsonContent = clipboardText;
                 }
             }
