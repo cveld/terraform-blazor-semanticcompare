@@ -19,6 +19,7 @@ Blazor Web App (.NET 9, Interactive Server rendering) that visualizes and semant
 ## Commands
 - Build: `dotnet build BlazorSemanticCompare.sln`
 - Run: `dotnet run --project BlazorSemanticCompare`
+- Dev server: on the laptop a single `dotnet watch` process serves the app on http://localhost:5206. Always start it via `pwsh scripts/dev-watch.ps1`, which checks whether it is already running, never starts a second instance, and streams all output to the central log `%LOCALAPPDATA%\semanticcompare\dotnet-watch.log`. Use `-Restart` to restart it. Read the log (`Get-Content "$env:LOCALAPPDATA\semanticcompare\dotnet-watch.log" -Tail 50`) to see build errors and hot-reload results after an edit instead of guessing from the browser; the server restarts after adding files, so wait for the port to come back.
 - Publish profile: `BlazorSemanticCompare/Properties/PublishProfiles/blazorsemanticcompare.pubxml` (linux-x64)
 
 There are currently no automated tests; verify changes by building and, for UI changes, running the app.
