@@ -132,8 +132,9 @@
                 {
                     var merged = JsonComputedMerger.MergeAfterWithComputed(after, afterUnknownElement);
                     var json = JsonSerializer.Serialize(merged, new JsonSerializerOptions { WriteIndented = true });
-                    json = JsonComputedMerger.ReplaceComputedMarkers(json);
-                    mergedAfter = JsonDocument.Parse(json).RootElement;
+                    // Keep the marker as a JSON string; HTML replacement makes this invalid JSON.
+                    using var mergedDocument = JsonDocument.Parse(json);
+                    mergedAfter = mergedDocument.RootElement.Clone();
                 }
                 
                 
