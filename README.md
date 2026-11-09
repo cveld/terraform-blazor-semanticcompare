@@ -37,6 +37,7 @@ Failed attempts are rate limited per client address. The code registry is in-mem
 ## Features
 
 - Paste or load a plan JSON and inspect each resource change
+- The browser tab title follows the loaded plan: its filename (or import source for agent API, WebMCP and clipboard imports), resource change count, and app name. Failed imports keep the previous plan title.
 - Semantic diff of `before` / `after` as a tree
 - Merges `after` with `after_unknown` so "known after apply" values are visible
 - Standalone JSON viewer and a debug page for the comparison

@@ -11,7 +11,7 @@
 @inject IConfiguration Configuration
 @inject AgentSession Agent
 
-<PageTitle>Terraform JSON Semantic Compare</PageTitle>
+<PageTitle>@PageTitleText</PageTitle>
 
 <h1>Terraform JSON Semantic Compare</h1>
 
@@ -156,11 +156,16 @@ else if (jsonData != null)
 
     private List<ResourceChange> resourceChanges = new();
 
+    private const string DefaultPageTitle = "Terraform JSON Semantic Compare";
+    private string PageTitleText => jsonData is null
+        ? DefaultPageTitle
+        : $"{fileName} — {resourceChanges.Count} resource changes — {DefaultPageTitle}";
+
     @inject IJSRuntime JS
 
-    private async Task LoadJsonFile(string fileName)
+    private async Task LoadJsonFile(string path)
     {
-        JsonFilePath = fileName;
+        JsonFilePath = path;
         isLoading = true;
         errorMessage = null;
         rawJsonContent = null; // free previous raw text if any
