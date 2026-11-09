@@ -107,6 +107,7 @@
                                                             }
                                                         }
                                                     </div>
+                                                    <FirewallAddressContextView Contexts="@rc.AddressContexts.Where(c => c.PropertyName == prop).ToList()" />
                                                 </td>
                                             </tr>
                                         }

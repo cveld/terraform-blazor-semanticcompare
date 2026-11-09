@@ -11,6 +11,7 @@ namespace BlazorSemanticCompare.Models
         public JsonElement? Before { get; set; }
         public JsonElement? After { get; set; }
         public JsonElement? AfterUnknown { get; set; }
+        public List<FirewallAddressContext> AddressContexts { get; set; } = new();
         /// <summary>Terraform's <c>action_reason</c>, e.g. replace_because_cannot_update.</summary>
         public string? ActionReason { get; set; }
         /// <summary>Attribute paths from <c>change.replace_paths</c> that force replacement.</summary>

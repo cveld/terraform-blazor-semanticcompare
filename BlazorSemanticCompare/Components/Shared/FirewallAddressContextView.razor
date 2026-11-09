@@ -1,0 +1,32 @@
+@using BlazorSemanticCompare.Models
+
+@if (Contexts.Count > 0)
+{
+    <div class="address-context mt-2" data-testid="firewall-address-context">
+        <strong>IP-group address ranges</strong>
+        <div class="small text-muted">Context from this plan, not a replacement for computed IDs. Configuration references indicate dependencies, not an evaluated expression.</div>
+        @foreach (var rule in Contexts.GroupBy(c => (c.RuleName, c.Direction)))
+        {
+            <div class="mt-2">
+                <strong>@rule.Key.RuleName</strong> — @rule.Key.Direction
+                @foreach (var context in rule)
+                {
+                    <div class="ms-2">
+                        <span class="badge bg-secondary">@context.Side</span>
+                        <strong>@context.GroupName</strong>
+                        @if (context.FromConfiguration)
+                        {
+                            <span class="small text-muted">(referenced by configuration; ID computed)</span>
+                        }
+                        <div class="small"><code>@context.ResourceAddress</code></div>
+                        <div><code>@string.Join(", ", context.Cidrs)</code>@(context.CidrsUnknown ? " — ranges partly or entirely unknown" : context.Cidrs.Count == 0 ? "(empty)" : "")</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<FirewallAddressContext> Contexts { get; set; } = [];
+}

@@ -54,6 +54,7 @@ namespace BlazorSemanticCompare.Helpers
                     ReplacePaths = ReadReplacePaths(changeObj)
                 });
             }
+            FirewallAddressContextExtractor.Populate(doc.RootElement, result);
             return result;
         }
 

@@ -124,6 +124,7 @@ else if (jsonData != null)
                          BeforeValue="@semanticCompareBefore"
                          AfterValue="@semanticCompareAfter"
                          AfterUnknownValue="@semanticCompareAfterUnknown"
+                         AddressContexts="@semanticCompareAddressContexts"
                          TreatEmptyAsNull="@treatEmptyAsNull"
                          OnClose="HideSemanticCompare" />
 }
@@ -146,6 +147,7 @@ else if (jsonData != null)
     private string semanticCompareAfter = string.Empty;
     private string semanticCompareAfterUnknown = string.Empty;
     private string semanticCompareResult = string.Empty;
+    private IReadOnlyList<FirewallAddressContext> semanticCompareAddressContexts = [];
 
     private const string JsonFilePathFirewall = @"C:\Users\CarlintVeld\OneDrive - CloudNation\src\PowerShell\Test scenarios terraform plan json\terraform with firewall rules semantic compare.json";
     private const string JsonFilePathAppGateway = @"C:\Users\CarlintVeld\OneDrive - CloudNation\src\PowerShell\Test scenarios terraform plan json\app gateway met veel wijzigingen.json";
@@ -291,6 +293,7 @@ else if (jsonData != null)
     private async Task HandleSemanticCompare((ResourceChange ResourceChange, string PropertyName) args)
     {
         var (rc, propertyName) = args;
+        semanticCompareAddressContexts = rc.AddressContexts.Where(c => c.PropertyName == propertyName).ToList();
         
         // Check if this property has an after_unknown value
         var hasAfterUnknown = HasAfterUnknownValue(rc.AfterUnknown, propertyName);

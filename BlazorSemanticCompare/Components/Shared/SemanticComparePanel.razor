@@ -44,6 +44,7 @@
                 </div>
             </div>
         </div>
+        <FirewallAddressContextView Contexts="@AddressContexts" />
         <div class="mt-3">
             <strong>Differences:</strong>
             @if (DiffRoot != null)
@@ -71,6 +72,7 @@
 [Parameter] public string AfterUnknownValue { get; set; } = string.Empty;
 [Parameter] public bool TreatEmptyAsNull { get; set; } = true;
 [Parameter] public EventCallback OnClose { get; set; }
+[Parameter] public IReadOnlyList<BlazorSemanticCompare.Models.FirewallAddressContext> AddressContexts { get; set; } = [];
 
     private JsonDiffNode? DiffRoot;
     private bool ShowBeforeRaw = false;
