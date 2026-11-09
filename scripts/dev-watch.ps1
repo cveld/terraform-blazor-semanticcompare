@@ -19,7 +19,8 @@ $logDir = Join-Path $env:LOCALAPPDATA 'semanticcompare'
 $log = Join-Path $logDir 'dotnet-watch.log'
 
 function Get-WatchProcess {
-    Get-CimInstance Win32_Process |
+    # Fail closed: if process discovery is denied, do not risk starting a second watcher.
+    Get-CimInstance Win32_Process -ErrorAction Stop |
         Where-Object { $_.CommandLine -match 'dotnet.*watch' -and $_.CommandLine -match "--urls http://localhost:$port" }
 }
 
