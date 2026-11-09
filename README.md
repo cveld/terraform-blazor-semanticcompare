@@ -93,3 +93,12 @@ Publish profile: `BlazorSemanticCompare/Properties/PublishProfiles/blazorsemanti
 ## Contributing
 
 See [AGENTS.md](AGENTS.md) for conventions (keep nullable warnings clean, use `System.Text.Json`, scoped `*.razor.css`, diff logic in `Services`/`Helpers`). Run the WebMCP JavaScript checks with `node --test scripts/webmcp.test.mjs`; also verify changes by building and running the app.
+
+### Local sandbox compatibility
+
+`appsettings.Development.json` enables `Development:SandboxCompatibility` for
+restricted local runtimes: logs go to console/debug instead of Windows Event Log,
+and Data Protection uses in-memory keys instead of the user's DPAPI key ring.
+Local protected tokens expire on server restart; reload the page after a restart.
+Set `Development__SandboxCompatibility=false` to use the normal providers outside
+a sandbox. This option is ignored outside the Development environment.

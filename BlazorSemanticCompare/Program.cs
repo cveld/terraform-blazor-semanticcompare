@@ -1,10 +1,22 @@
 using BlazorSemanticCompare.Components;
 using BlazorSemanticCompare.Services;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Opt-in local sandbox mode; never change production logging or key persistence.
+if (builder.Environment.IsDevelopment() &&
+    builder.Configuration.GetValue<bool>("Development:SandboxCompatibility"))
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+
+}
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -30,6 +42,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // Register the JSON diff service for DI
 builder.Services.AddSingleton<JsonProcessingService>();
+
+// Register last: Razor services also register Data Protection defaults.
+if (builder.Environment.IsDevelopment() &&
+    builder.Configuration.GetValue<bool>("Development:SandboxCompatibility"))
+{
+    builder.Services.Replace(ServiceDescriptor.Singleton<IDataProtectionProvider>(
+        new EphemeralDataProtectionProvider()));
+}
 
 var app = builder.Build();
 
