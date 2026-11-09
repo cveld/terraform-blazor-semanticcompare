@@ -7,7 +7,7 @@
 @using BlazorSemanticCompare.Helpers
 @using BlazorSemanticCompare.Services
 @using Microsoft.AspNetCore.Components.Forms
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IConfiguration Configuration
 @inject AgentSession Agent
 
@@ -53,6 +53,7 @@
         Agent code: <code id="agent-code" data-testid="agent-code">@Agent.Code</code>
         &mdash; an agent can push a plan to this page with this code while it stays open.
         <a href="agent-setup">Setup instructions</a>
+        <span class="ms-2" data-testid="webmcp-status">WebMCP: @(webMcpAvailable ? "available" : "unavailable (use agent API)")</span>
     </div>
 }
 
@@ -184,10 +185,9 @@ else if (jsonData != null)
             }
 
             await using var stream = File.OpenRead(JsonFilePath);
-            jsonData?.Dispose();
-            jsonData = await JsonDocument.ParseAsync(stream);
-            fileName = Path.GetFileName(JsonFilePath);
-            resourceChanges = ResourceChangeExtractor.Extract(jsonData);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync();
+            errorMessage = LoadFromText(text, Path.GetFileName(JsonFilePath));
         }
         catch (JsonException ex)
         {
@@ -250,11 +250,22 @@ else if (jsonData != null)
         catch { return element.ToString() ?? string.Empty; }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (Agent.PlanHandler == LoadFromAgent) Agent.PlanHandler = null;
-        jsonData?.Dispose();
+        webMcpPlan = null;
+        if (webMcpModule is not null)
+        {
+            try
+            {
+                await webMcpModule.InvokeVoidAsync("unregisterTools");
+                await webMcpModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { /* circuit already gone */ }
+            catch (JSException) { /* document already gone */ }
+        }
         dotNetRef?.Dispose();
+        jsonData?.Dispose();
     }
 
     private bool IsObjectOrArray(JsonElement? element, string propertyName)
@@ -387,6 +398,9 @@ else if (jsonData != null)
     }
 
     private DotNetObjectReference<JsonViewer>? dotNetRef;
+    private IJSObjectReference? webMcpModule;
+    private bool webMcpAvailable;
+    private System.Text.StringBuilder? webMcpPlan;
     private bool isInteractive; // the agent code belongs to the circuit, so only show it once interactive
 
     protected override void OnInitialized()
@@ -412,7 +426,9 @@ else if (jsonData != null)
             dotNetRef = DotNetObjectReference.Create(this);
             try
             {
-                await JS.InvokeVoidAsync("window.registerWebMcpTools", dotNetRef);
+                webMcpModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/webmcp.js");
+                webMcpAvailable = await webMcpModule.InvokeAsync<bool>("registerTools", dotNetRef);
+                StateHasChanged();
             }
             catch (Exception)
             {
@@ -421,14 +437,68 @@ else if (jsonData != null)
         }
     }
 
-    // Called by the WebMCP "load-terraform-plan" tool
     [JSInvokable]
-    public async Task<string> LoadTerraformPlanFromTool(string planJson)
+    public void BeginWebMcpPlan() => webMcpPlan = new();
+
+    [JSInvokable]
+    public void AppendWebMcpPlan(string chunk)
     {
-        string? error = null;
-        await InvokeAsync(() => { error = LoadFromText(planJson, "(from WebMCP tool)"); });
-        if (error is not null) return "Error: " + error;
-        return $"Loaded terraform plan with {resourceChanges.Count} resource changes.";
+        if (webMcpPlan is null) throw new InvalidOperationException("No WebMCP import in progress.");
+        if (chunk.Length > 2000 || webMcpPlan.Length + chunk.Length > TerraformPlanParser.MaxPlanBytes)
+        {
+            webMcpPlan = null;
+            throw new InvalidOperationException("Plan exceeds the import limit.");
+        }
+        webMcpPlan.Append(chunk);
+    }
+
+    [JSInvokable]
+    public void CancelWebMcpPlan() => webMcpPlan = null;
+
+    [JSInvokable]
+    public async Task<AgentPlanResult> CompleteWebMcpPlan()
+    {
+        var plan = webMcpPlan?.ToString();
+        webMcpPlan = null;
+        if (plan is null) return new(false, 0, "No WebMCP import in progress.");
+        AgentPlanResult result = new(false, 0, "Import did not complete.");
+        await InvokeAsync(() =>
+        {
+            var error = LoadFromText(plan, "(from WebMCP tool)");
+            result = new(error is null, error is null ? resourceChanges.Count : 0, error);
+        });
+        return result;
+    }
+
+    [JSInvokable]
+    public object GetWebMcpPlanStatus() => new
+    {
+        success = true,
+        loaded = jsonData is not null,
+        fileName,
+        resourceChanges = resourceChanges.Select(rc => new { rc.Address, rc.Type, rc.Name, rc.Action }),
+        comparison = showSemanticCompare ? semanticCompareProperty : null
+    };
+
+    [JSInvokable]
+    public async Task<object> OpenWebMcpSemanticCompare(string address, string property)
+    {
+        object result = new { success = false, error = "Resource not found in the loaded plan." };
+        await InvokeAsync(async () =>
+        {
+            var rc = resourceChanges.FirstOrDefault(rc => rc.Address == address);
+            if (rc is null) return;
+            if (GetPropertyElement(rc.Before, property) is null &&
+                GetPropertyElement(rc.After, property) is null &&
+                GetPropertyElement(rc.AfterUnknown, property) is null)
+            {
+                result = new { success = false, error = "Top-level property not found on this resource." };
+                return;
+            }
+            await HandleSemanticCompare((rc, property));
+            result = new { success = true, address, property };
+        });
+        return result;
     }
 
     private async Task LoadFromFile(InputFileChangeEventArgs e)
@@ -464,14 +534,14 @@ else if (jsonData != null)
 
     private string? LoadFromText(string text, string name)
     {
-        if (string.IsNullOrWhiteSpace(text)) return "Input is empty.";
         try
         {
-            var doc = JsonDocument.Parse(text);
+            var (doc, changes) = TerraformPlanParser.Parse(text);
             jsonData?.Dispose();
             jsonData = doc;
             fileName = name;
-            resourceChanges = ResourceChangeExtractor.Extract(jsonData);
+            resourceChanges = changes;
+            showSemanticCompare = false;
             rawJsonContent = text;
             showRaw = false;
             showTree = false;
@@ -529,11 +599,7 @@ else if (jsonData != null)
                 }
                 else
                 {
-                    jsonData?.Dispose();
-                    jsonData = JsonDocument.Parse(clipboardText);
-                    fileName = "(from clipboard)";
-                    resourceChanges = ResourceChangeExtractor.Extract(jsonData);
-                    rawJsonContent = clipboardText;
+                    errorMessage = LoadFromText(clipboardText, "(from clipboard)");
                 }
             }
         }

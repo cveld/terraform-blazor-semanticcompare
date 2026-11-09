@@ -1,6 +1,6 @@
 # Terraform Semantic Compare
 
-Blazor Web App (.NET 9, Interactive Server rendering) that visualizes and semantically compares Terraform plan JSON. The app reads `resource_changes` from a plan and shows, per resource, the differences between `before` and `after`, including values that are only known after apply (`after_unknown`, "known after apply").
+Blazor Web App (.NET 10, Interactive Server rendering) that visualizes and semantically compares Terraform plan JSON. The app reads `resource_changes` from a plan and shows, per resource, the differences between `before` and `after`, including values that are only known after apply (`after_unknown`, "known after apply").
 
 ## Try it online
 
@@ -33,6 +33,27 @@ A coding agent can push a plan into the page you have open, without the clipboar
 3. The plan lives only as long as that page's Blazor connection. After a connection drop it is released once the circuit expires (`DisconnectedCircuitRetentionPeriod`, 2 minutes). A page refresh gives a new code.
 
 Failed attempts are rate limited per client address. The code registry is in-memory, so this requires **a single replica** (the Container App must keep `maxReplicas: 1`). See `/agent-setup` in the app for examples and the skill onboarding.
+
+## WebMCP (optional browser integration)
+
+On the interactive plan viewer (`/` or `/json-viewer`), browsers exposing
+`navigator.modelContext.registerTool` and `unregisterTool` discover:
+
+- **`load-terraform-plan`** — `{ "plan": "<terraform show -json output>" }` imports a plan (max 20 MB UTF-8), replacing the current plan only after validation.
+- **`get-plan-status`** — `{}` returns whether a plan is loaded and its changed resource addresses/actions, without raw attribute values.
+- **`open-semantic-compare`** — `{ "address": "azurerm_application_gateway.example", "property": "backend_address_pool" }` opens the existing comparison panel.
+
+Tools return text containing JSON, with `isError: true` for failures. Imports are
+chunked below Blazor Server's incoming message limit. Tools unregister when leaving
+the viewer and register again when returning. The page displays availability; on
+browsers without WebMCP, clipboard/file import and the agent API still work.
+No polyfill is installed: a compatible browser/agent integration must supply the
+native API. Tools never fetch a URL or read the clipboard/files implicitly. Obtain
+user approval before sending sensitive Terraform plan values to the page.
+
+Developer checks: `node --test scripts/webmcp.test.mjs` and
+`dotnet build BlazorSemanticCompare.sln`. Start the local server only via
+`pwsh scripts/dev-watch.ps1` and follow `%LOCALAPPDATA%/semanticcompare/dotnet-watch.log`.
 
 ## Features
 
@@ -71,4 +92,4 @@ Publish profile: `BlazorSemanticCompare/Properties/PublishProfiles/blazorsemanti
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for conventions (keep nullable warnings clean, use `System.Text.Json`, scoped `*.razor.css`, diff logic in `Services`/`Helpers`). There are no automated tests yet; verify changes by building and running the app.
+See [AGENTS.md](AGENTS.md) for conventions (keep nullable warnings clean, use `System.Text.Json`, scoped `*.razor.css`, diff logic in `Services`/`Helpers`). Run the WebMCP JavaScript checks with `node --test scripts/webmcp.test.mjs`; also verify changes by building and running the app.
